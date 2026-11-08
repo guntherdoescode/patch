@@ -365,8 +365,7 @@ fn build_workspace(project_name: gtk::Label, active_chat: Rc<Cell<Option<i64>>>)
             placeholder.set_visible(empty);
         });
     }
-    // Text entry is enabled so users can draft prompts. Sending remains
-    // disabled until the agent request pipeline is implemented.
+    // Prompt submission is connected to the local Ollama streaming API below.
 
     let composer_footer = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     composer_footer.set_halign(gtk::Align::Fill);
@@ -384,7 +383,27 @@ fn build_workspace(project_name: gtk::Label, active_chat: Rc<Cell<Option<i64>>>)
     let send = gtk::Button::with_label("Send");
     send.add_css_class("suggested-action");
     send.set_sensitive(false);
-    send.set_tooltip_text(Some("Sending will be enabled when the agent pipeline is ready"));
+    send.set_tooltip_text(Some("Send prompt to the selected local Ollama model"));
+
+    #[derive(Debug)]
+    enum StreamEvent {
+        Chunk(String),
+        Finished(Result<crate::providers::ollama::ChatUsage, String>),
+    }
+
+    let busy = Rc::new(Cell::new(false));
+    {
+        let send = send.clone();
+        let prompt_buffer = prompt_buffer.clone();
+        let busy = busy.clone();
+        prompt_buffer.connect_changed(move |buffer| {
+            let has_text = !buffer
+                .text(&buffer.start_iter(), &buffer.end_iter(), false)
+                .trim()
+                .is_empty();
+            send.set_sensitive(has_text && !busy.get());
+        });
+    }
 
     let build_mode = Rc::new(Cell::new(false));
     let set_mode = {
@@ -425,6 +444,158 @@ fn build_workspace(project_name: gtk::Label, active_chat: Rc<Cell<Option<i64>>>)
         });
     }
     prompt.add_controller(key_controller);
+
+    {
+        let prompt_buffer = prompt_buffer.clone();
+        let model = model.clone();
+        let active_chat = active_chat.clone();
+        let transcript = transcript.clone();
+        let transcript_scroll = transcript_scroll.clone();
+        let welcome = welcome.clone();
+        let chat_messages = chat_messages.clone();
+        let build_mode = build_mode.clone();
+        let busy = busy.clone();
+        let send = send.clone();
+        let usage = usage.widget.clone();
+        send.connect_clicked(move |_| {
+            if busy.get() {
+                return;
+            }
+            let prompt_text = prompt_buffer
+                .text(&prompt_buffer.start_iter(), &prompt_buffer.end_iter(), false)
+                .trim()
+                .to_owned();
+            if prompt_text.is_empty() {
+                return;
+            }
+            let Some(chat_id) = active_chat.get() else {
+                transcript_scroll.set_visible(true);
+                welcome.set_visible(false);
+                let buffer = transcript.buffer();
+                buffer.set_text("Open a project and create a chat before sending a prompt.\n");
+                transcript_scroll.queue_draw();
+                return;
+            };
+            let Some(model_name) = model.active_text().map(|value| value.to_string()) else {
+                return;
+            };
+            if model_name.starts_with("Discovering") || model_name.starts_with("No local")
+                || model_name.starts_with("Ollama unavailable")
+            {
+                return;
+            }
+
+            busy.set(true);
+            send.set_sensitive(false);
+            prompt_buffer.set_text("");
+            welcome.set_visible(false);
+            transcript_scroll.set_visible(true);
+
+            if let Err(error) = crate::storage::save_message(chat_id, "user", &prompt_text, None, None) {
+                eprintln!("Could not save user message: {error}");
+            }
+            let transcript_buffer = transcript.buffer();
+            let mut end = transcript_buffer.end_iter();
+            transcript_buffer.insert(&mut end, &format!("You\n{prompt_text}\n\nPatch\n"));
+
+            let mut request_messages = chat_messages.borrow().clone();
+            let mode_instruction = if build_mode.get() {
+                "You are Patch, a coding assistant in Build mode. Help implement requested changes. Do not claim to have edited files or run commands unless tools actually performed those actions."
+            } else {
+                "You are Patch, a coding assistant in Plan mode. Analyse and explain; do not propose that you have modified files or run commands."
+            };
+            request_messages.insert(0, crate::providers::ollama::ChatMessage {
+                role: "system".to_owned(),
+                content: mode_instruction.to_owned(),
+            });
+            request_messages.push(crate::providers::ollama::ChatMessage {
+                role: "user".to_owned(),
+                content: prompt_text.clone(),
+            });
+            chat_messages.borrow_mut().push(crate::providers::ollama::ChatMessage {
+                role: "user".to_owned(),
+                content: prompt_text,
+            });
+
+            let (tx, rx) = std::sync::mpsc::channel::<StreamEvent>();
+            std::thread::spawn(move || {
+                let result = crate::providers::ollama::OllamaClient::default().chat_stream(
+                    &model_name,
+                    &request_messages,
+                    |chunk| { let _ = tx.send(StreamEvent::Chunk(chunk)); },
+                ).map_err(|error| error.to_string());
+                let _ = tx.send(StreamEvent::Finished(result));
+            });
+
+            let transcript_buffer = transcript.buffer();
+            let chat_messages = chat_messages.clone();
+            let busy = busy.clone();
+            let send = send.clone();
+            let prompt_buffer = prompt_buffer.clone();
+            let usage = UsageGauge {
+                widget: usage,
+                ledger: Rc::new(RefCell::new(crate::usage::UsageLedger::default())),
+                pricing: Rc::new(Cell::new(None)),
+            };
+            let mut assistant_text = String::new();
+            gtk::glib::timeout_add_local(std::time::Duration::from_millis(25), move || {
+                loop {
+                    match rx.try_recv() {
+                        Ok(StreamEvent::Chunk(chunk)) => {
+                            assistant_text.push_str(&chunk);
+                            let mut end = transcript_buffer.end_iter();
+                            transcript_buffer.insert(&mut end, &chunk);
+                        }
+                        Ok(StreamEvent::Finished(Ok(stats))) => {
+                            let mut end = transcript_buffer.end_iter();
+                            transcript_buffer.insert(&mut end, "\n\n");
+                            if let Err(error) = crate::storage::save_message(
+                                chat_id, "assistant", &assistant_text,
+                                stats.prompt_tokens, stats.completion_tokens,
+                            ) {
+                                eprintln!("Could not save assistant message: {error}");
+                            }
+                            chat_messages.borrow_mut().push(crate::providers::ollama::ChatMessage {
+                                role: "assistant".to_owned(),
+                                content: assistant_text.clone(),
+                            });
+                            if let (Some(input), Some(output)) = (stats.prompt_tokens, stats.completion_tokens) {
+                                usage.record_provider_usage(
+                                    input, output,
+                                    Some(input.saturating_add(output)), None,
+                                );
+                            }
+                            busy.set(false);
+                            let has_text = !prompt_buffer
+                                .text(&prompt_buffer.start_iter(), &prompt_buffer.end_iter(), false)
+                                .trim().is_empty();
+                            send.set_sensitive(has_text);
+                            return gtk::glib::ControlFlow::Break;
+                        }
+                        Ok(StreamEvent::Finished(Err(error))) => {
+                            let mut end = transcript_buffer.end_iter();
+                            transcript_buffer.insert(&mut end, &format!("\n\n[Ollama error: {error}]\n\n"));
+                            busy.set(false);
+                            let has_text = !prompt_buffer
+                                .text(&prompt_buffer.start_iter(), &prompt_buffer.end_iter(), false)
+                                .trim().is_empty();
+                            send.set_sensitive(has_text);
+                            return gtk::glib::ControlFlow::Break;
+                        }
+                        Err(std::sync::mpsc::TryRecvError::Empty) => {
+                            transcript_scroll.queue_draw();
+                            return gtk::glib::ControlFlow::Continue;
+                        }
+                        Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                            busy.set(false);
+                            send.set_sensitive(true);
+                            return gtk::glib::ControlFlow::Break;
+                        }
+                    }
+                }
+            });
+        });
+    }
 
     composer_footer.append(&mode_button);
     composer_footer.append(&mode_hint);
