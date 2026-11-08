@@ -366,7 +366,7 @@ impl UsageGauge {
             _ => "Unavailable from model metadata".to_owned(),
         };
         let cost = match ledger.cost(self.pricing.get()) {
-            crate::usage::CostDisplay::Known(value) => format!("\${value:.6} USD"),
+            crate::usage::CostDisplay::Known(value) => format!("${value:.6} USD"),
             crate::usage::CostDisplay::Unknown => "Unavailable — no verified rate card".to_owned(),
         };
         let tooltip = format!(
