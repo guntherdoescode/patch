@@ -1,4 +1,6 @@
-# Patch
+<p align="center">
+  <img src="assets/patch.png" width="210" height="40" style="image-rendering: pixelated; image-rendering: crisp-edges;" alt="Patch Logo">
+</p>
 
 A native Rust coding agent built around a simple principle: **the model may propose actions, but the application owns permission enforcement.**
 
