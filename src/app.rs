@@ -25,6 +25,14 @@ pub fn build(application: &adw::Application) {
     window.present();
 }
 
+fn patch_logo(width: i32, height: i32) -> gtk::Picture {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/patch.png");
+    let picture = gtk::Picture::for_filename(path);
+    picture.set_size_request(width, height);
+    picture.set_can_shrink(true);
+    picture
+}
+
 fn build_sidebar(
     window: &adw::ApplicationWindow,
     project_name: &gtk::Label,
