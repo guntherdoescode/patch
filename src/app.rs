@@ -75,13 +75,20 @@ fn build_sidebar(
     let workspace_id = active_workspace.clone();
 
     project.connect_clicked(move |_| {
-        let dialog = gtk::FileChooserNative::new(
+        // Use GTK's in-process dialog rather than FileChooserNative. The
+        // native chooser can trigger a GDK monitor-scale assertion on some
+        // Wayland/compositor combinations (notably when the portal reports an
+        // invalid scale factor), and has caused the application to crash.
+        let dialog = gtk::FileChooserDialog::new(
             Some("Open workspace"),
             Some(&parent),
             gtk::FileChooserAction::SelectFolder,
-            Some("Open"),
-            Some("Cancel"),
+            &[
+                ("Cancel", gtk::ResponseType::Cancel),
+                ("Open", gtk::ResponseType::Accept),
+            ],
         );
+        dialog.set_modal(true);
         let name_label = name_label.clone();
         let history_list = history_list.clone();
         let workspace_id = workspace_id.clone();
