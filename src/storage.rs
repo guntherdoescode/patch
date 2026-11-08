@@ -122,3 +122,73 @@ pub fn create_chat(workspace_id: i64) -> Result<i64> {
     )?;
     Ok(connection.last_insert_rowid())
 }
+
+/// Store an explicit rate card. Rates are USD per million tokens and should
+/// only be written from a verified provider/model price source.
+pub fn set_model_pricing(
+    provider: &str,
+    model_id: &str,
+    input_usd_per_million: f64,
+    output_usd_per_million: f64,
+    source: &str,
+) -> Result<()> {
+    let connection = open_database()?;
+    connection.execute(
+        "INSERT INTO model_pricing
+         (provider, model_id, input_usd_per_million, output_usd_per_million,
+          verified_at, source)
+         VALUES (?1, ?2, ?3, ?4, CURRENT_TIMESTAMP, ?5)
+         ON CONFLICT(provider, model_id) DO UPDATE SET
+         input_usd_per_million = excluded.input_usd_per_million,
+         output_usd_per_million = excluded.output_usd_per_million,
+         verified_at = CURRENT_TIMESTAMP,
+         source = excluded.source",
+        rusqlite::params![
+            provider,
+            model_id,
+            input_usd_per_million,
+            output_usd_per_million,
+            source
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn get_model_pricing(
+    provider: &str,
+    model_id: &str,
+) -> Result<Option<crate::usage::TokenPricing>> {
+    let connection = open_database()?;
+    let mut statement = connection.prepare(
+        "SELECT input_usd_per_million, output_usd_per_million
+         FROM model_pricing WHERE provider = ?1 AND model_id = ?2"
+    )?;
+    let mut rows = statement.query(rusqlite::params![provider, model_id])?;
+    match rows.next()? {
+        Some(row) => Ok(Some(crate::usage::TokenPricing {
+            input_usd_per_million: row.get(0)?,
+            output_usd_per_million: row.get(1)?,
+        })),
+        None => Ok(None),
+    }
+}
+
+pub fn save_message(
+    chat_id: i64,
+    role: &str,
+    content: &str,
+    input_tokens: Option<u64>,
+    output_tokens: Option<u64>,
+) -> Result<i64> {
+    let connection = open_database()?;
+    connection.execute(
+        "INSERT INTO messages (chat_id, role, content, input_tokens, output_tokens)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params![chat_id, role, content, input_tokens, output_tokens],
+    )?;
+    connection.execute(
+        "UPDATE chats SET updated_at = CURRENT_TIMESTAMP WHERE id = ?1",
+        [chat_id],
+    )?;
+    Ok(connection.last_insert_rowid())
+}
