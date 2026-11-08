@@ -298,16 +298,18 @@ fn build_workspace(project_name: gtk::Label) -> gtk::Box {
     let composer_outer = gtk::Box::new(gtk::Orientation::Vertical, 8);
     composer_outer.set_margin_start(28);
     composer_outer.set_margin_end(28);
-    composer_outer.set_margin_bottom(22);
+    composer_outer.set_margin_bottom(12);
+    composer_outer.set_vexpand(false);
 
     let composer = gtk::Box::new(gtk::Orientation::Vertical, 4);
     composer.add_css_class("patch-composer");
     composer.add_css_class("plan-mode");
     composer.set_size_request(-1, 72);
+    composer.set_vexpand(false);
 
     let prompt_scroll = gtk::ScrolledWindow::new();
     prompt_scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
-    prompt_scroll.set_vexpand(true);
+    prompt_scroll.set_vexpand(false);
     prompt_scroll.set_min_content_height(24);
 
     let prompt = gtk::TextView::new();
@@ -317,7 +319,7 @@ fn build_workspace(project_name: gtk::Label) -> gtk::Box {
     prompt.set_left_margin(8);
     prompt.set_right_margin(8);
     prompt.set_hexpand(true);
-    prompt.set_vexpand(true);
+    prompt.set_vexpand(false);
 
     // GtkTextView has no built-in placeholder property. Overlay a dim label
     // and track the buffer so the hint disappears as soon as text is entered.
