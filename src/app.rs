@@ -282,7 +282,7 @@ fn build_workspace(project_name: gtk::Label) -> gtk::Box {
     if let Some(display) = gtk::gdk::Display::default() {
         let css = gtk::CssProvider::new();
         css.load_from_data(
-            ".patch-composer { border: 1px solid alpha(@theme_fg_color, 0.22); border-radius: 14px; padding: 8px; }\
+            ".patch-composer { border: 1px solid alpha(@theme_fg_color, 0.22); border-radius: 12px; padding: 5px; }\
              .patch-composer.plan-mode { border-color: #3987d7; background: alpha(#3987d7, 0.055); }\
              .patch-composer.build-mode { border-color: #f07832; background: alpha(#f07832, 0.075); }\
              .patch-mode.plan-mode { color: #65a9f2; background: alpha(#3987d7, 0.16); }\
@@ -300,20 +300,20 @@ fn build_workspace(project_name: gtk::Label) -> gtk::Box {
     composer_outer.set_margin_end(28);
     composer_outer.set_margin_bottom(22);
 
-    let composer = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    let composer = gtk::Box::new(gtk::Orientation::Vertical, 4);
     composer.add_css_class("patch-composer");
     composer.add_css_class("plan-mode");
-    composer.set_size_request(-1, 92);
+    composer.set_size_request(-1, 72);
 
     let prompt_scroll = gtk::ScrolledWindow::new();
     prompt_scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
     prompt_scroll.set_vexpand(true);
-    prompt_scroll.set_min_content_height(38);
+    prompt_scroll.set_min_content_height(24);
 
     let prompt = gtk::TextView::new();
     prompt.set_wrap_mode(gtk::WrapMode::WordChar);
-    prompt.set_top_margin(6);
-    prompt.set_bottom_margin(6);
+    prompt.set_top_margin(2);
+    prompt.set_bottom_margin(2);
     prompt.set_left_margin(8);
     prompt.set_right_margin(8);
     prompt.set_hexpand(true);
