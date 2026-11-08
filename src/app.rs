@@ -458,7 +458,6 @@ fn build_workspace(project_name: gtk::Label, active_chat: Rc<Cell<Option<i64>>>)
         let send = send.clone();
         let usage_widget = usage.widget.clone();
         let usage_ledger = usage.ledger.clone();
-        let usage_pricing = usage.pricing.clone();
         send.connect_clicked(move |_| {
             if busy.get() {
                 return;
@@ -536,7 +535,6 @@ fn build_workspace(project_name: gtk::Label, active_chat: Rc<Cell<Option<i64>>>)
             let prompt_buffer = prompt_buffer.clone();
             let usage_widget = usage_widget.clone();
             let usage_ledger = usage_ledger.clone();
-            let usage_pricing = usage_pricing.clone();
             let mut assistant_text = String::new();
             gtk::glib::timeout_add_local(std::time::Duration::from_millis(25), move || {
                 loop {
