@@ -90,7 +90,10 @@ impl OllamaClient {
 fn find_numeric_key(value: &Value, wanted: &str) -> Option<u64> {
     match value {
         Value::Object(map) => {
-            if let Some(found) = map.get(wanted).and_then(Value::as_u64) {
+            if let Some(found) = map.iter()
+                .find(|(key, _)| key.as_str() == wanted || key.ends_with(".context_length"))
+                .and_then(|(_, value)| value.as_u64())
+            {
                 return Some(found);
             }
             map.values().find_map(|child| find_numeric_key(child, wanted))
@@ -107,10 +110,10 @@ mod tests {
     #[test]
     fn finds_context_length_in_nested_model_metadata() {
         let value = serde_json::json!({
-            "model_info": { "general.context_length": 32768 },
+            "model_info": { "llama.context_length": 32768 },
             "details": {}
         });
-        assert_eq!(find_numeric_key(&value, "general.context_length"), Some(32768));
+        assert_eq!(find_numeric_key(&value, "context_length"), Some(32768));
     }
 
     #[test]
