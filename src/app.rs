@@ -186,28 +186,37 @@ fn build_workspace(project_name: gtk::Label) -> gtk::Box {
 
     // Network discovery runs off the GTK main thread. The UI is updated only
     // after the result is sent back through the main context.
-    let model_for_update = model.clone();
+    let (sender, receiver) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let discovered = crate::providers::ollama::OllamaClient::default().list_models();
-        gtk::glib::MainContext::default().invoke(move || {
-            model_for_update.remove_all();
-            match discovered {
-                Ok(models) if !models.is_empty() => {
-                    for item in models {
-                        model_for_update.append_text(&item.name);
+        let _ = sender.send(discovered);
+    });
+    let model_for_update = model.clone();
+    gtk::glib::timeout_add_local(std::time::Duration::from_millis(150), move || {
+        match receiver.try_recv() {
+            Ok(discovered) => {
+                model_for_update.remove_all();
+                match discovered {
+                    Ok(models) if !models.is_empty() => {
+                        for item in models {
+                            model_for_update.append_text(&item.name);
+                        }
+                        model_for_update.set_active(Some(0));
                     }
-                    model_for_update.set_active(Some(0));
+                    Ok(_) => {
+                        model_for_update.append_text("No local Ollama models");
+                        model_for_update.set_active(Some(0));
+                    }
+                    Err(_) => {
+                        model_for_update.append_text("Ollama unavailable");
+                        model_for_update.set_active(Some(0));
+                    }
                 }
-                Ok(_) => {
-                    model_for_update.append_text("No local Ollama models");
-                    model_for_update.set_active(Some(0));
-                }
-                Err(_) => {
-                    model_for_update.append_text("Ollama unavailable");
-                    model_for_update.set_active(Some(0));
-                }
+                gtk::glib::ControlFlow::Break
             }
-        });
+            Err(std::sync::mpsc::TryRecvError::Empty) => gtk::glib::ControlFlow::Continue,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => gtk::glib::ControlFlow::Break,
+        }
     });
 
     let conversation = gtk::Box::new(gtk::Orientation::Vertical, 14);
