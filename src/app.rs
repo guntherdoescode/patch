@@ -455,7 +455,7 @@ fn build_workspace(project_name: gtk::Label, active_chat: Rc<Cell<Option<i64>>>)
         let chat_messages = chat_messages.clone();
         let build_mode = build_mode.clone();
         let busy = busy.clone();
-        let send = send.clone();
+        let send_button = send.clone();
         let usage_widget = usage.widget.clone();
         let usage_ledger = usage.ledger.clone();
         send.connect_clicked(move |_| {
@@ -487,7 +487,7 @@ fn build_workspace(project_name: gtk::Label, active_chat: Rc<Cell<Option<i64>>>)
             }
 
             busy.set(true);
-            send.set_sensitive(false);
+            send_button.set_sensitive(false);
             prompt_buffer.set_text("");
             welcome.set_visible(false);
             transcript_scroll.set_visible(true);
@@ -532,7 +532,7 @@ fn build_workspace(project_name: gtk::Label, active_chat: Rc<Cell<Option<i64>>>)
             let transcript_scroll = transcript_scroll.clone();
             let chat_messages = chat_messages.clone();
             let busy = busy.clone();
-            let send = send.clone();
+            let send = send_button.clone();
             let prompt_buffer = prompt_buffer.clone();
             let usage_widget = usage_widget.clone();
             let usage_ledger = usage_ledger.clone();
