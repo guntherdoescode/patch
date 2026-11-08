@@ -456,7 +456,9 @@ fn build_workspace(project_name: gtk::Label, active_chat: Rc<Cell<Option<i64>>>)
         let build_mode = build_mode.clone();
         let busy = busy.clone();
         let send = send.clone();
-        let usage = usage.widget.clone();
+        let usage_widget = usage.widget.clone();
+        let usage_ledger = usage.ledger.clone();
+        let usage_pricing = usage.pricing.clone();
         send.connect_clicked(move |_| {
             if busy.get() {
                 return;
@@ -532,11 +534,9 @@ fn build_workspace(project_name: gtk::Label, active_chat: Rc<Cell<Option<i64>>>)
             let busy = busy.clone();
             let send = send.clone();
             let prompt_buffer = prompt_buffer.clone();
-            let usage = UsageGauge {
-                widget: usage,
-                ledger: Rc::new(RefCell::new(crate::usage::UsageLedger::default())),
-                pricing: Rc::new(Cell::new(None)),
-            };
+            let usage_widget = usage_widget.clone();
+            let usage_ledger = usage_ledger.clone();
+            let usage_pricing = usage_pricing.clone();
             let mut assistant_text = String::new();
             gtk::glib::timeout_add_local(std::time::Duration::from_millis(25), move || {
                 loop {
@@ -560,10 +560,11 @@ fn build_workspace(project_name: gtk::Label, active_chat: Rc<Cell<Option<i64>>>)
                                 content: assistant_text.clone(),
                             });
                             if let (Some(input), Some(output)) = (stats.prompt_tokens, stats.completion_tokens) {
-                                usage.record_provider_usage(
+                                usage_ledger.borrow_mut().record(
                                     input, output,
                                     Some(input.saturating_add(output)), None,
                                 );
+                                usage_widget.queue_draw();
                             }
                             busy.set(false);
                             let has_text = !prompt_buffer
