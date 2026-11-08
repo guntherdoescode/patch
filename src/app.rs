@@ -36,8 +36,7 @@ fn build_sidebar(
     sidebar.set_margin_end(14);
     sidebar.add_css_class("sidebar");
 
-    let brand = gtk::Label::new(Some("PATCH"));
-    brand.add_css_class("title-2");
+    let brand = patch_logo(126, 24);
     brand.set_halign(gtk::Align::Start);
 
     let new_chat = gtk::Button::with_label("＋  New chat");
@@ -177,15 +176,12 @@ fn build_workspace(project_name: gtk::Label) -> gtk::Box {
     let header = gtk::HeaderBar::new();
     header.set_title_widget(Some(&project_name));
 
-    let mode = gtk::Box::new(gtk::Orientation::Horizontal, 4);
-    mode.add_css_class("linked");
-    let plan_button = gtk::ToggleButton::with_label("Plan");
-    let build_button = gtk::ToggleButton::with_label("Build");
-    build_button.set_group(Some(&plan_button));
-    plan_button.set_active(true);
-    mode.append(&plan_button);
-    mode.append(&build_button);
-    header.pack_end(&mode);
+    let mode_toggle = gtk::ToggleButton::with_label("Plan");
+    mode_toggle.set_tooltip_text(Some("Switch between Plan and Build"));
+    mode_toggle.connect_toggled(|button| {
+        button.set_label(if button.is_active() { "Build" } else { "Plan" });
+    });
+    header.pack_end(&mode_toggle);
 
     let model = gtk::ComboBoxText::new();
     model.append_text("Discovering local models…");
@@ -236,17 +232,9 @@ fn build_workspace(project_name: gtk::Label) -> gtk::Box {
     conversation.set_hexpand(true);
     conversation.set_vexpand(true);
 
-    let welcome = gtk::Label::new(Some("A better way to work with your code."));
-    welcome.add_css_class("title-1");
-    let hint = gtk::Label::new(Some(
-        "Open a project to begin. Plan mode is read-only; Build mode requires explicit approval.",
-    ));
-    hint.add_css_class("dim-label");
-    hint.set_wrap(true);
-    hint.set_justify(gtk::Justification::Center);
-    hint.set_max_width_chars(68);
+    let welcome = patch_logo(210, 40);
+    welcome.set_halign(gtk::Align::Center);
     conversation.append(&welcome);
-    conversation.append(&hint);
 
     let composer_outer = gtk::Box::new(gtk::Orientation::Vertical, 8);
     composer_outer.set_margin_start(28);
