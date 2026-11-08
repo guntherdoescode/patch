@@ -25,12 +25,53 @@ pub fn build(application: &adw::Application) {
     window.present();
 }
 
-fn patch_logo(width: i32, height: i32) -> gtk::Picture {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/patch.png");
-    let picture = gtk::Picture::for_filename(path);
-    picture.set_size_request(width, height);
-    picture.set_can_shrink(true);
-    picture
+fn patch_logo(width: i32, height: i32) -> gtk::DrawingArea {
+    // Render the tiny logo as pixel art. GtkPicture's normal texture scaling
+    // interpolates pixels, which makes this 21x4 asset look blurred when
+    // enlarged. Cairo's Nearest filter keeps every source pixel crisp.
+    let mut png = std::io::Cursor::new(include_bytes!("../assets/patch.png"));
+    let surface = match cairo::ImageSurface::create_from_png(&mut png) {
+        Ok(surface) => surface,
+        Err(error) => {
+            eprintln!("Could not load Patch logo: {error}");
+            let area = gtk::DrawingArea::new();
+            area.set_content_width(width);
+            area.set_content_height(height);
+            return area;
+        }
+    };
+
+    let source_width = surface.width();
+    let source_height = surface.height();
+    let area = gtk::DrawingArea::new();
+    area.set_content_width(width);
+    area.set_content_height(height);
+    area.set_size_request(width, height);
+    area.set_draw_func(move |_, context, allocated_width, allocated_height| {
+        if source_width <= 0 || source_height <= 0 {
+            return;
+        }
+
+        // Use an integer scale so source pixels are never stretched by
+        // fractional amounts. Centre the result in the allocated area.
+        let scale = (allocated_width / source_width)
+            .min(allocated_height / source_height)
+            .max(1);
+        let rendered_width = source_width * scale;
+        let rendered_height = source_height * scale;
+        let x = (allocated_width - rendered_width) as f64 / 2.0;
+        let y = (allocated_height - rendered_height) as f64 / 2.0;
+
+        context.save().ok();
+        context.translate(x, y);
+        context.scale(scale as f64, scale as f64);
+        if context.set_source_surface(&surface, 0.0, 0.0).is_ok() {
+            let _ = context.source().set_filter(cairo::Filter::Nearest);
+            let _ = context.paint();
+        }
+        context.restore().ok();
+    });
+    area
 }
 
 fn build_sidebar(
