@@ -82,3 +82,43 @@ pub fn open_database() -> Result<Connection> {
     )?;
     Ok(connection)
 }
+
+pub fn register_workspace(path: &std::path::Path) -> Result<i64> {
+    let canonical = path.canonicalize()
+        .map_err(|_| rusqlite::Error::InvalidPath(path.to_path_buf()))?;
+    let display_name = canonical.file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("Workspace");
+    let connection = open_database()?;
+    connection.execute(
+        "INSERT INTO workspaces (canonical_path, display_name) VALUES (?1, ?2)
+         ON CONFLICT(canonical_path) DO UPDATE SET
+         last_opened_at = CURRENT_TIMESTAMP",
+        rusqlite::params![canonical.to_string_lossy(), display_name],
+    )?;
+    connection.query_row(
+        "SELECT id FROM workspaces WHERE canonical_path = ?1",
+        [canonical.to_string_lossy().as_ref()],
+        |row| row.get(0),
+    )
+}
+
+pub fn list_chat_titles(workspace_id: i64) -> Result<Vec<(i64, String)>> {
+    let connection = open_database()?;
+    let mut statement = connection.prepare(
+        "SELECT id, title FROM chats WHERE workspace_id = ?1 ORDER BY updated_at DESC"
+    )?;
+    let rows = statement.query_map([workspace_id], |row| {
+        Ok((row.get(0)?, row.get(1)?))
+    })?;
+    rows.collect()
+}
+
+pub fn create_chat(workspace_id: i64) -> Result<i64> {
+    let connection = open_database()?;
+    connection.execute(
+        "INSERT INTO chats (workspace_id, title) VALUES (?1, 'New chat')",
+        [workspace_id],
+    )?;
+    Ok(connection.last_insert_rowid())
+}
