@@ -281,6 +281,23 @@ fn build_workspace(project_name: gtk::Label, active_chat: Rc<Cell<Option<i64>>>)
     welcome.set_halign(gtk::Align::Center);
     conversation.append(&welcome);
 
+    let transcript_scroll = gtk::ScrolledWindow::new();
+    transcript_scroll.set_hexpand(true);
+    transcript_scroll.set_vexpand(true);
+    transcript_scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+    let transcript = gtk::TextView::new();
+    transcript.set_editable(false);
+    transcript.set_cursor_visible(false);
+    transcript.set_wrap_mode(gtk::WrapMode::WordChar);
+    transcript.set_left_margin(18);
+    transcript.set_right_margin(18);
+    transcript.set_top_margin(18);
+    transcript.set_bottom_margin(18);
+    transcript_scroll.set_child(Some(&transcript));
+    transcript_scroll.set_visible(false);
+    conversation.append(&transcript_scroll);
+    let chat_messages = Rc::new(RefCell::new(Vec::<crate::providers::ollama::ChatMessage>::new()));
+
     // The composer owns the mode selector: there is no longer a separate
     // Plan/Build control in the header.
     if let Some(display) = gtk::gdk::Display::default() {
