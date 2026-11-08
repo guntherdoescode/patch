@@ -529,6 +529,7 @@ fn build_workspace(project_name: gtk::Label, active_chat: Rc<Cell<Option<i64>>>)
             });
 
             let transcript_buffer = transcript.buffer();
+            let transcript_scroll = transcript_scroll.clone();
             let chat_messages = chat_messages.clone();
             let busy = busy.clone();
             let send = send.clone();
