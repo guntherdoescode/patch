@@ -1,5 +1,4 @@
 use adw::prelude::*;
-use gtk::prelude::*;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
@@ -319,10 +318,32 @@ fn build_workspace(project_name: gtk::Label) -> gtk::Box {
     prompt.set_right_margin(8);
     prompt.set_hexpand(true);
     prompt.set_vexpand(true);
-    prompt.set_placeholder_text(Some("Ask Patch about your code…"));
+
+    // GtkTextView has no built-in placeholder property. Overlay a dim label
+    // and track the buffer so the hint disappears as soon as text is entered.
+    let prompt_overlay = gtk::Overlay::new();
+    prompt_overlay.set_child(Some(&prompt_scroll));
+    prompt_scroll.set_child(Some(&prompt));
+    let placeholder = gtk::Label::new(Some("Ask Patch about your code…"));
+    placeholder.add_css_class("dim-label");
+    placeholder.set_halign(gtk::Align::Start);
+    placeholder.set_valign(gtk::Align::Start);
+    placeholder.set_margin_start(12);
+    placeholder.set_margin_top(10);
+    placeholder.set_can_target(false);
+    prompt_overlay.add_overlay(&placeholder);
+    let prompt_buffer = prompt.buffer();
+    {
+        let placeholder = placeholder.clone();
+        prompt_buffer.connect_changed(move |buffer| {
+            let empty = buffer
+                .text(&buffer.start_iter(), &buffer.end_iter(), false)
+                .is_empty();
+            placeholder.set_visible(empty);
+        });
+    }
     // Text entry is enabled so users can draft prompts. Sending remains
     // disabled until the agent request pipeline is implemented.
-    prompt_scroll.set_child(Some(&prompt));
 
     let composer_footer = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     composer_footer.set_halign(gtk::Align::Fill);
@@ -389,7 +410,7 @@ fn build_workspace(project_name: gtk::Label) -> gtk::Box {
     composer_footer.append(&footer_spacer);
     composer_footer.append(&send);
 
-    composer.append(&prompt_scroll);
+    composer.append(&prompt_overlay);
     composer.append(&composer_footer);
     composer_outer.append(&composer);
     workspace.append(&header);
