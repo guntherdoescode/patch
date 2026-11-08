@@ -1,6 +1,6 @@
 use adw::prelude::*;
 use gtk::prelude::*;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 pub fn build(application: &adw::Application) {
@@ -181,8 +181,8 @@ fn build_workspace(project_name: gtk::Label) -> gtk::Box {
     model.set_active(Some(0));
     header.pack_start(&model);
 
-    let usage = usage_indicator();
-    header.pack_end(&usage);
+    let usage = UsageGauge::new();
+    header.pack_end(&usage.widget);
 
     // Network discovery runs off the GTK main thread. The UI is updated only
     // after the result is sent back through the main context.
@@ -262,39 +262,119 @@ fn build_workspace(project_name: gtk::Label) -> gtk::Box {
     workspace
 }
 
-fn usage_indicator() -> gtk::DrawingArea {
-    let gauge = gtk::DrawingArea::new();
-    gauge.set_content_width(38);
-    gauge.set_content_height(38);
-    gauge.set_tooltip_text(Some(
-        "Context: unavailable\nTokens used: 0\nInput: 0 · Output: 0\nCost: unavailable until provider pricing is configured",
-    ));
-    gauge.set_draw_func(|_, context, width, height| {
-        use std::f64::consts::PI;
-        let cx = width as f64 / 2.0;
-        let cy = height as f64 / 2.0;
-        let radius = (width.min(height) as f64 / 2.0) - 4.0;
+/// Circular context indicator with a hover breakdown. Updates must be fed
+/// provider-reported usage and an explicitly configured model rate card.
+pub struct UsageGauge {
+    pub widget: gtk::DrawingArea,
+    ledger: Rc<RefCell<crate::usage::UsageLedger>>,
+    pricing: Rc<Cell<Option<crate::usage::TokenPricing>>>,
+}
 
-        context.set_line_width(3.5);
-        context.set_source_rgba(0.5, 0.5, 0.5, 0.28);
-        context.arc(cx, cy, radius, 0.0, 2.0 * PI);
-        let _ = context.stroke();
+impl UsageGauge {
+    pub fn new() -> Self {
+        let widget = gtk::DrawingArea::new();
+        widget.set_content_width(40);
+        widget.set_content_height(40);
 
-        // No usage percentage is shown until a provider supplies real context
-        // metadata. A neutral ring is preferable to a fabricated figure.
-        context.set_source_rgba(0.85, 0.35, 0.12, 0.9);
-        context.set_line_width(1.5);
-        context.arc(cx, cy, radius, -PI / 2.0, -PI / 2.0 + 0.02);
-        let _ = context.stroke();
+        let ledger = Rc::new(RefCell::new(crate::usage::UsageLedger::default()));
+        let pricing = Rc::new(Cell::new(None));
+        let draw_ledger = ledger.clone();
 
-        context.select_font_face("Sans", gtk::cairo::FontSlant::Normal, gtk::cairo::FontWeight::Bold);
-        context.set_font_size(10.0);
-        context.set_source_rgba(0.85, 0.85, 0.85, 0.95);
-        let text = "—";
-        if let Ok(extents) = context.text_extents(text) {
-            context.move_to(cx - extents.width() / 2.0, cy + extents.height() / 2.0);
-            let _ = context.show_text(text);
-        }
-    });
-    gauge
+        widget.set_draw_func(move |_, context, width, height| {
+            use std::f64::consts::PI;
+            let cx = width as f64 / 2.0;
+            let cy = height as f64 / 2.0;
+            let radius = (width.min(height) as f64 / 2.0) - 4.0;
+            let counts = draw_ledger.borrow().counts();
+            let fraction = counts.context_fraction();
+
+            context.set_line_width(3.5);
+            context.set_source_rgba(0.5, 0.5, 0.5, 0.28);
+            context.arc(cx, cy, radius, 0.0, 2.0 * PI);
+            let _ = context.stroke();
+
+            if let Some(fraction) = fraction {
+                context.set_source_rgba(0.92, 0.32, 0.08, 0.96);
+                context.set_line_width(3.5);
+                context.arc(cx, cy, radius, -PI / 2.0, -PI / 2.0 + fraction * 2.0 * PI);
+                let _ = context.stroke();
+            }
+
+            context.select_font_face(
+                "Sans",
+                gtk::cairo::FontSlant::Normal,
+                gtk::cairo::FontWeight::Bold,
+            );
+            context.set_font_size(10.0);
+            context.set_source_rgba(0.85, 0.85, 0.85, 0.95);
+            let label = fraction
+                .map(|value| format!("{:.0}%", value * 100.0))
+                .unwrap_or_else(|| "—".to_owned());
+            if let Ok(extents) = context.text_extents(&label) {
+                context.move_to(cx - extents.width() / 2.0, cy + extents.height() / 2.0);
+                let _ = context.show_text(&label);
+            }
+        });
+
+        let gauge = Self { widget, ledger, pricing };
+        gauge.refresh_tooltip();
+        gauge
+    }
+
+    /// Record one completed model response using provider-supplied usage
+    /// metadata. Do not call this with locally estimated token counts.
+    pub fn record_provider_usage(
+        &self,
+        input_tokens: u64,
+        output_tokens: u64,
+        context_tokens: Option<u64>,
+        context_limit: Option<u64>,
+    ) {
+        self.ledger.borrow_mut().record(
+            input_tokens,
+            output_tokens,
+            context_tokens,
+            context_limit,
+        );
+        self.refresh();
+    }
+
+    /// Set rates for the selected provider/model. Pass zero rates for a local
+    /// Ollama model; pass None when hosted pricing is not verified.
+    pub fn set_pricing(&self, pricing: Option<crate::usage::TokenPricing>) {
+        self.pricing.set(pricing);
+        self.refresh();
+    }
+
+    fn refresh(&self) {
+        self.widget.queue_draw();
+        self.refresh_tooltip();
+    }
+
+    fn refresh_tooltip(&self) {
+        let ledger = self.ledger.borrow();
+        let counts = ledger.counts();
+        let context = match (counts.context, counts.context_limit) {
+            (Some(used), Some(limit)) if limit > 0 => {
+                format!(
+                    "{} / {} tokens ({:.1}%)",
+                    crate::usage::compact_tokens(used),
+                    crate::usage::compact_tokens(limit),
+                    (used as f64 / limit as f64 * 100.0).min(100.0)
+                )
+            }
+            _ => "Unavailable from model metadata".to_owned(),
+        };
+        let cost = match ledger.cost(self.pricing.get()) {
+            crate::usage::CostDisplay::Known(value) => format!("\${value:.6} USD"),
+            crate::usage::CostDisplay::Unknown => "Unavailable — no verified rate card".to_owned(),
+        };
+        let tooltip = format!(
+            "Context: {context}\nTokens burned: {}\nInput: {} · Output: {}\nEstimated cost: {cost}",
+            crate::usage::compact_tokens(counts.total_burned()),
+            crate::usage::compact_tokens(counts.input),
+            crate::usage::compact_tokens(counts.output),
+        );
+        self.widget.set_tooltip_text(Some(&tooltip));
+    }
 }
