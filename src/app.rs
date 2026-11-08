@@ -92,14 +92,18 @@ fn build_sidebar(
         let name_label = name_label.clone();
         let history_list = history_list.clone();
         let workspace_id = workspace_id.clone();
+        let chooser = dialog.clone();
 
         dialog.connect_response(move |dialog, response| {
             if response != gtk::ResponseType::Accept {
+                dialog.close();
                 return;
             }
-            let Some(path) = dialog.file().and_then(|file| file.path()) else {
+            let Some(path) = chooser.file().and_then(|file| file.path()) else {
+                dialog.close();
                 return;
             };
+            dialog.close();
             match crate::storage::register_workspace(&path) {
                 Ok(id) => {
                     workspace_id.set(Some(id));
