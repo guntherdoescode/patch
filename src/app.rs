@@ -16,10 +16,11 @@ pub fn build(application: &adw::Application) {
     let project_name = gtk::Label::new(Some("No project open"));
     project_name.add_css_class("heading");
 
-    let sidebar = build_sidebar(&window, &project_name);
+    let active_chat = Rc::new(Cell::new(None::<i64>));
+    let sidebar = build_sidebar(&window, &project_name, active_chat.clone());
     sidebar.set_size_request(250, -1);
     root.append(&sidebar);
-    root.append(&build_workspace(project_name));
+    root.append(&build_workspace(project_name, active_chat));
     window.set_content(Some(&root));
     window.present();
 }
@@ -76,6 +77,7 @@ fn patch_logo(width: i32, height: i32) -> gtk::DrawingArea {
 fn build_sidebar(
     window: &adw::ApplicationWindow,
     project_name: &gtk::Label,
+    active_chat: Rc<Cell<Option<i64>>>,
 ) -> gtk::Box {
     let sidebar = gtk::Box::new(gtk::Orientation::Vertical, 12);
     sidebar.set_margin_top(16);
@@ -189,12 +191,14 @@ fn build_sidebar(
     });
 
     let history_for_new = history.clone();
+    let active_chat_for_new = active_chat.clone();
     new_chat.connect_clicked(move |_| {
         let Some(id) = active_workspace.get() else {
             return;
         };
         match crate::storage::create_chat(id) {
-            Ok(_) => {
+            Ok(id) => {
+                active_chat_for_new.set(Some(id));
                 let label = gtk::Label::new(Some("New chat"));
                 label.set_halign(gtk::Align::Start);
                 label.set_margin_top(8);
@@ -216,7 +220,7 @@ fn build_sidebar(
     sidebar
 }
 
-fn build_workspace(project_name: gtk::Label) -> gtk::Box {
+fn build_workspace(project_name: gtk::Label, active_chat: Rc<Cell<Option<i64>>>) -> gtk::Box {
     let workspace = gtk::Box::new(gtk::Orientation::Vertical, 0);
     workspace.set_hexpand(true);
     workspace.set_vexpand(true);
