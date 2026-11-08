@@ -45,6 +45,52 @@ pub enum CostDisplay {
     Unknown,
 }
 
+/// Accumulates provider-reported usage for the active conversation.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct UsageLedger {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub latest_context_tokens: Option<u64>,
+    pub context_limit: Option<u64>,
+}
+
+impl UsageLedger {
+    /// Record a completed request. The caller must pass provider-reported
+    /// usage, not locally guessed token counts.
+    pub fn record(
+        &mut self,
+        input_tokens: u64,
+        output_tokens: u64,
+        context_tokens: Option<u64>,
+        context_limit: Option<u64>,
+    ) {
+        self.input_tokens = self.input_tokens.saturating_add(input_tokens);
+        self.output_tokens = self.output_tokens.saturating_add(output_tokens);
+        if context_tokens.is_some() {
+            self.latest_context_tokens = context_tokens;
+        }
+        if context_limit.is_some() {
+            self.context_limit = context_limit;
+        }
+    }
+
+    pub fn counts(&self) -> TokenCounts {
+        TokenCounts {
+            input: self.input_tokens,
+            output: self.output_tokens,
+            context: self.latest_context_tokens,
+            context_limit: self.context_limit,
+        }
+    }
+
+    pub fn cost(&self, pricing: Option<TokenPricing>) -> CostDisplay {
+        match pricing {
+            Some(rates) => CostDisplay::Known(self.counts().estimated_cost_usd(rates)),
+            None => CostDisplay::Unknown,
+        }
+    }
+}
+
 pub fn compact_tokens(value: u64) -> String {
     if value >= 1_000_000 {
         format!("{:.2}M", value as f64 / 1_000_000.0)
@@ -73,6 +119,17 @@ mod tests {
             output_usd_per_million: 8.0,
         };
         assert!((counts.estimated_cost_usd(pricing) - 6.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn ledger_accumulates_provider_usage_and_tracks_latest_context() {
+        let mut ledger = UsageLedger::default();
+        ledger.record(100, 25, Some(125), Some(32_768));
+        ledger.record(80, 40, Some(245), Some(32_768));
+        assert_eq!(ledger.input_tokens, 180);
+        assert_eq!(ledger.output_tokens, 65);
+        assert_eq!(ledger.latest_context_tokens, Some(245));
+        assert_eq!(ledger.counts().total_burned(), 245);
     }
 
     #[test]
