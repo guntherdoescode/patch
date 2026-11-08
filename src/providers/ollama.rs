@@ -111,7 +111,7 @@ impl OllamaClient {
                 })).collect::<Vec<_>>(),
                 "stream": true
             }))
-            .timeout(None)
+            .timeout(Duration::from_secs(300))
             .send()
             .map_err(|error| ChatError::Request(error.to_string()))?
             .error_for_status()
