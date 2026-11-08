@@ -303,12 +303,12 @@ fn build_workspace(project_name: gtk::Label) -> gtk::Box {
     let composer = gtk::Box::new(gtk::Orientation::Vertical, 8);
     composer.add_css_class("patch-composer");
     composer.add_css_class("plan-mode");
-    composer.set_size_request(-1, 132);
+    composer.set_size_request(-1, 92);
 
     let prompt_scroll = gtk::ScrolledWindow::new();
     prompt_scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
     prompt_scroll.set_vexpand(true);
-    prompt_scroll.set_min_content_height(76);
+    prompt_scroll.set_min_content_height(38);
 
     let prompt = gtk::TextView::new();
     prompt.set_wrap_mode(gtk::WrapMode::WordChar);
@@ -345,7 +345,7 @@ fn build_workspace(project_name: gtk::Label) -> gtk::Box {
     // Text entry is enabled so users can draft prompts. Sending remains
     // disabled until the agent request pipeline is implemented.
 
-    let composer_footer = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let composer_footer = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     composer_footer.set_halign(gtk::Align::Fill);
 
     let mode_button = gtk::Button::with_label("Plan");
