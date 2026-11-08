@@ -68,7 +68,60 @@ impl OllamaClient {
             .map_err(|error| OllamaError::InvalidResponse(error.to_string()))
     }
 
-    pub fn model_info(&self, model: &str) -> Result<OllamaModelInfo, OllamaError> {
+
+    /// Stream a chat completion from Ollama's newline-delimited JSON endpoint.
+    /// Each content fragment is sent immediately; final usage is returned after
+    /// Ollama marks the response as done.
+    pub fn chat_stream(
+        &self,
+        model: &str,
+        messages: &[ChatMessage],
+        on_chunk: impl FnMut(String),
+    ) -> Result<ChatUsage, ChatError> {
+        use std::io::{BufRead, BufReader};
+
+        let response = self.http
+            .post(format!("{}/api/chat", self.base_url))
+            .json(&serde_json::json!({
+                "model": model,
+                "messages": messages.iter().map(|message| serde_json::json!({
+                    "role": message.role,
+                    "content": message.content
+                })).collect::<Vec<_>>(),
+                "stream": true
+            }))
+            .timeout(None)
+            .send()
+            .map_err(|error| ChatError::Request(error.to_string()))?
+            .error_for_status()
+            .map_err(|error| ChatError::Request(error.to_string()))?;
+
+        let mut usage = ChatUsage::default();
+        let reader = BufReader::new(response);
+        for line in reader.lines() {
+            let line = line.map_err(|error| ChatError::Request(error.to_string()))?;
+            if line.trim().is_empty() {
+                continue;
+            }
+            let value: Value = serde_json::from_str(&line)
+                .map_err(|error| ChatError::InvalidResponse(error.to_string()))?;
+            if let Some(error) = value.get("error").and_then(Value::as_str) {
+                return Err(ChatError::Provider(error.to_owned()));
+            }
+            if let Some(fragment) = value.pointer("/message/content").and_then(Value::as_str) {
+                if !fragment.is_empty() {
+                    on_chunk(fragment.to_owned());
+                }
+            }
+            if value.get("done").and_then(Value::as_bool) == Some(true) {
+                usage.prompt_tokens = value.get("prompt_eval_count").and_then(Value::as_u64);
+                usage.completion_tokens = value.get("eval_count").and_then(Value::as_u64);
+                break;
+            }
+        }
+        Ok(usage)
+    }
+\n    pub fn model_info(&self, model: &str) -> Result<OllamaModelInfo, OllamaError> {
         let response = self.http
             .post(format!("{}/api/show", self.base_url))
             .json(&serde_json::json!({ "name": model }))
