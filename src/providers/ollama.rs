@@ -25,6 +25,28 @@ pub struct OllamaModelInfo {
     pub context_length: Option<u64>,
 }
 
+#[derive(Debug, Clone)]
+pub struct ChatMessage {
+    pub role: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ChatUsage {
+    pub prompt_tokens: Option<u64>,
+    pub completion_tokens: Option<u64>,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ChatError {
+    #[error("Request failed: {0}")]
+    Request(String),
+    #[error("Invalid response: {0}")]
+    InvalidResponse(String),
+    #[error("Ollama error: {0}")]
+    Provider(String),
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum OllamaError {
     #[error("Could not reach Ollama at {0}")]
@@ -68,7 +90,6 @@ impl OllamaClient {
             .map_err(|error| OllamaError::InvalidResponse(error.to_string()))
     }
 
-
     /// Stream a chat completion from Ollama's newline-delimited JSON endpoint.
     /// Each content fragment is sent immediately; final usage is returned after
     /// Ollama marks the response as done.
@@ -76,7 +97,7 @@ impl OllamaClient {
         &self,
         model: &str,
         messages: &[ChatMessage],
-        on_chunk: impl FnMut(String),
+        mut on_chunk: impl FnMut(String),
     ) -> Result<ChatUsage, ChatError> {
         use std::io::{BufRead, BufReader};
 
@@ -121,7 +142,8 @@ impl OllamaClient {
         }
         Ok(usage)
     }
-\n    pub fn model_info(&self, model: &str) -> Result<OllamaModelInfo, OllamaError> {
+
+    pub fn model_info(&self, model: &str) -> Result<OllamaModelInfo, OllamaError> {
         let response = self.http
             .post(format!("{}/api/show", self.base_url))
             .json(&serde_json::json!({ "name": model }))
