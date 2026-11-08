@@ -225,13 +225,6 @@ fn build_workspace(project_name: gtk::Label) -> gtk::Box {
     let header = gtk::HeaderBar::new();
     header.set_title_widget(Some(&project_name));
 
-    let mode_toggle = gtk::ToggleButton::with_label("Plan");
-    mode_toggle.set_tooltip_text(Some("Switch between Plan and Build"));
-    mode_toggle.connect_toggled(|button| {
-        button.set_label(if button.is_active() { "Build" } else { "Plan" });
-    });
-    header.pack_end(&mode_toggle);
-
     let model = gtk::ComboBoxText::new();
     model.append_text("Discovering local models…");
     model.set_active(Some(0));
@@ -285,25 +278,120 @@ fn build_workspace(project_name: gtk::Label) -> gtk::Box {
     welcome.set_halign(gtk::Align::Center);
     conversation.append(&welcome);
 
+    // The composer owns the mode selector: there is no longer a separate
+    // Plan/Build control in the header.
+    if let Some(display) = gtk::gdk::Display::default() {
+        let css = gtk::CssProvider::new();
+        css.load_from_data(
+            ".patch-composer { border: 1px solid alpha(@theme_fg_color, 0.22); border-radius: 14px; padding: 8px; }\
+             .patch-composer.plan-mode { border-color: #3987d7; background: alpha(#3987d7, 0.055); }\
+             .patch-composer.build-mode { border-color: #f07832; background: alpha(#f07832, 0.075); }\
+             .patch-mode.plan-mode { color: #65a9f2; background: alpha(#3987d7, 0.16); }\
+             .patch-mode.build-mode { color: #ff9858; background: alpha(#f07832, 0.18); }",
+        );
+        gtk::style_context_add_provider_for_display(
+            &display,
+            &css,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    }
+
     let composer_outer = gtk::Box::new(gtk::Orientation::Vertical, 8);
     composer_outer.set_margin_start(28);
     composer_outer.set_margin_end(28);
     composer_outer.set_margin_bottom(22);
 
-    let composer = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    composer.add_css_class("toolbar");
-    let prompt = gtk::Entry::new();
-    prompt.set_placeholder_text(Some("Ask Patch about your code…"));
+    let composer = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    composer.add_css_class("patch-composer");
+    composer.add_css_class("plan-mode");
+    composer.set_size_request(-1, 132);
+
+    let prompt_scroll = gtk::ScrolledWindow::new();
+    prompt_scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+    prompt_scroll.set_vexpand(true);
+    prompt_scroll.set_min_content_height(76);
+
+    let prompt = gtk::TextView::new();
+    prompt.set_wrap_mode(gtk::WrapMode::WordChar);
+    prompt.set_top_margin(6);
+    prompt.set_bottom_margin(6);
+    prompt.set_left_margin(8);
+    prompt.set_right_margin(8);
     prompt.set_hexpand(true);
-    prompt.set_sensitive(false);
+    prompt.set_vexpand(true);
+    prompt.set_placeholder_text(Some("Ask Patch about your code…"));
+    // Text entry is enabled so users can draft prompts. Sending remains
+    // disabled until the agent request pipeline is implemented.
+    prompt_scroll.set_child(Some(&prompt));
+
+    let composer_footer = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    composer_footer.set_halign(gtk::Align::Fill);
+
+    let mode_button = gtk::Button::with_label("Plan");
+    mode_button.add_css_class("flat");
+    mode_button.add_css_class("patch-mode");
+    mode_button.add_css_class("plan-mode");
+    mode_button.set_tooltip_text(Some("Plan mode · press Tab to switch to Build"));
+
+    let mode_hint = gtk::Label::new(Some("Tab to switch"));
+    mode_hint.add_css_class("dim-label");
+    mode_hint.add_css_class("caption");
 
     let send = gtk::Button::with_label("Send");
     send.add_css_class("suggested-action");
     send.set_sensitive(false);
-    composer.append(&prompt);
-    composer.append(&send);
-    composer_outer.append(&composer);
+    send.set_tooltip_text(Some("Sending will be enabled when the agent pipeline is ready"));
 
+    let build_mode = Rc::new(Cell::new(false));
+    let set_mode = {
+        let build_mode = build_mode.clone();
+        let composer = composer.clone();
+        let mode_button = mode_button.clone();
+        move |build: bool| {
+            build_mode.set(build);
+            composer.remove_css_class(if build { "plan-mode" } else { "build-mode" });
+            composer.add_css_class(if build { "build-mode" } else { "plan-mode" });
+            mode_button.remove_css_class(if build { "plan-mode" } else { "build-mode" });
+            mode_button.add_css_class(if build { "build-mode" } else { "plan-mode" });
+            mode_button.set_label(if build { "Build" } else { "Plan" });
+            mode_button.set_tooltip_text(Some(if build {
+                "Build mode · press Tab to switch to Plan"
+            } else {
+                "Plan mode · press Tab to switch to Build"
+            }));
+        }
+    };
+
+    {
+        let build_mode = build_mode.clone();
+        let set_mode = set_mode.clone();
+        mode_button.connect_clicked(move |_| set_mode(!build_mode.get()));
+    }
+
+    let key_controller = gtk::EventControllerKey::new();
+    {
+        let build_mode = build_mode.clone();
+        key_controller.connect_key_pressed(move |_, key, _, _| {
+            if key == gtk::gdk::Key::Tab {
+                set_mode(!build_mode.get());
+                gtk::glib::Propagation::Stop
+            } else {
+                gtk::glib::Propagation::Proceed
+            }
+        });
+    }
+    prompt.add_controller(key_controller);
+
+    composer_footer.append(&mode_button);
+    composer_footer.append(&mode_hint);
+    let footer_spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    footer_spacer.set_hexpand(true);
+    composer_footer.append(&footer_spacer);
+    composer_footer.append(&send);
+
+    composer.append(&prompt_scroll);
+    composer.append(&composer_footer);
+    composer_outer.append(&composer);
     workspace.append(&header);
     workspace.append(&conversation);
     workspace.append(&composer_outer);
