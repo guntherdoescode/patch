@@ -304,13 +304,13 @@ fn build_workspace(project_name: gtk::Label) -> gtk::Box {
     let composer = gtk::Box::new(gtk::Orientation::Vertical, 4);
     composer.add_css_class("patch-composer");
     composer.add_css_class("plan-mode");
-    composer.set_size_request(-1, 72);
+    composer.set_size_request(-1, 92);
     composer.set_vexpand(false);
 
     let prompt_scroll = gtk::ScrolledWindow::new();
     prompt_scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
     prompt_scroll.set_vexpand(false);
-    prompt_scroll.set_min_content_height(24);
+    prompt_scroll.set_min_content_height(42);
 
     let prompt = gtk::TextView::new();
     prompt.set_wrap_mode(gtk::WrapMode::WordChar);
