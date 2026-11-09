@@ -16,13 +16,19 @@ pub fn build(application: &adw::Application) {
     root.set_wide_handle(true);
     root.set_position(255);
     // Keep the chat sidebar within the window and reserve usable space for the editor.
-    root.connect_notify_local(Some("position"), |paned, _| {
+    let clamp_root_position = |paned: &gtk::Paned| {
         let width = paned.width();
         if width <= 0 { return; }
-        let upper = (width - 520).max(180).min(360);
-        let clamped = paned.position().clamp(180.min(upper), upper);
+        let upper = (width - 520).max(220).min(360);
+        let clamped = paned.position().clamp(220.min(upper), upper);
         if clamped != paned.position() { paned.set_position(clamped); }
+    };
+    root.connect_notify_local(Some("position"), {
+        let clamp = clamp_root_position.clone();
+        move |paned, _| clamp(paned)
     });
+    // Re-clamp after GTK reallocates the Paned when project contents change.
+    root.connect_notify_local(Some("width"), move |paned, _| clamp_root_position(paned));
     let content = gtk::Paned::new(gtk::Orientation::Horizontal);
     content.set_wide_handle(true);
     content.set_position(760);
@@ -38,6 +44,9 @@ pub fn build(application: &adw::Application) {
 
     let project_name = gtk::Label::new(Some("No project open"));
     project_name.add_css_class("heading");
+    // Project folder names must not impose a wider natural size on the header.
+    project_name.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    project_name.set_max_width_chars(24);
 
     let active_chat = Rc::new(Cell::new(None::<i64>));
     let active_workspace = Rc::new(Cell::new(None::<i64>));
@@ -496,7 +505,12 @@ fn populate_file_list(list: &gtk::ListBox, root: &std::path::Path, parent: &adw:
             let path = entry.path();
             let Ok(kind) = entry.file_type() else { continue; };
             if kind.is_dir() {
-                let expander = gtk::Expander::new(Some(&name));
+                let expander = gtk::Expander::new(None);
+                let folder_label = gtk::Label::new(Some(&name));
+                folder_label.set_halign(gtk::Align::Start);
+                folder_label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+                folder_label.set_max_width_chars(24);
+                expander.set_label_widget(Some(&folder_label));
                 expander.add_css_class("flat");
                 expander.set_hexpand(true);
                 let branch = gtk::Box::new(gtk::Orientation::Vertical, 1);
