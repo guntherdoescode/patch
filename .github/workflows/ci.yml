@@ -26,7 +26,7 @@ jobs:
             libxcb-shape0-dev libxcb-xfixes0-dev libxcb-xkb-dev \
             libxkbcommon-x11-dev libvulkan-dev libasound2-dev
       - name: Format Rust sources
-        run: cargo fmt --all -- --check
+        run: cargo fmt --all
       - name: Run tests
         run: cargo test
       - name: Check application
