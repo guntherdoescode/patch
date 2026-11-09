@@ -12,16 +12,16 @@ pub enum ToolError {
 
 pub fn current_directory(ws: &Workspace) -> String { ws.root().display().to_string() }
 
-pub fn list_directory(ws: &Workspace, path: &str) -> Result<Vec<String>, ToolError> {
-    let path = ws.resolve(path)?;
+pub fn list_directory(ws: &Workspace, path: &str, external: bool) -> Result<Vec<String>, ToolError> {
+    let path = ws.resolve_with_external(path, external)?;
     let mut entries = std::fs::read_dir(path)?.filter_map(Result::ok)
         .map(|entry| entry.file_name().to_string_lossy().into_owned()).collect::<Vec<_>>();
     entries.sort();
     Ok(entries)
 }
 
-pub fn read_file(ws: &Workspace, path: &str) -> Result<String, ToolError> {
-    let path = ws.resolve(path)?;
+pub fn read_file(ws: &Workspace, path: &str, external: bool) -> Result<String, ToolError> {
+    let path = ws.resolve_with_external(path, external)?;
     let metadata = std::fs::metadata(&path)?;
     if !metadata.is_file() || metadata.len() > 2_000_000 { return Err(ToolError::Denied); }
     Ok(std::fs::read_to_string(path)?)
@@ -33,15 +33,15 @@ pub fn search_files(ws: &Workspace, query: &str) -> Result<Vec<String>, ToolErro
     Ok(output.lines().take(500).map(str::to_owned).collect())
 }
 
-pub fn write_file(ws: &Workspace, path: &str, contents: &str) -> Result<(), ToolError> {
-    let path = ws.resolve(Path::new(path))?;
+pub fn write_file(ws: &Workspace, path: &str, contents: &str, external: bool) -> Result<(), ToolError> {
+    let path = ws.resolve_with_external(Path::new(path), external)?;
     if let Some(parent) = path.parent() { std::fs::create_dir_all(parent)?; }
     std::fs::write(path, contents)?;
     Ok(())
 }
 
-pub fn delete_file(ws: &Workspace, path: &str) -> Result<(), ToolError> {
-    let path = ws.resolve(path)?;
+pub fn delete_file(ws: &Workspace, path: &str, external: bool) -> Result<(), ToolError> {
+    let path = ws.resolve_with_external(path, external)?;
     if path.is_dir() { return Err(ToolError::Denied); }
     std::fs::remove_file(path)?;
     Ok(())
