@@ -123,6 +123,18 @@ pub fn create_chat(workspace_id: i64) -> Result<i64> {
     Ok(connection.last_insert_rowid())
 }
 
+/// Derive a concise title from the first non-empty line of a user message.
+pub fn chat_title_from_message(message: &str) -> String {
+    let first_line = message.lines().find(|line| !line.trim().is_empty()).unwrap_or("New chat");
+    let normalised = first_line.split_whitespace().collect::<Vec<_>>().join(" ");
+    const MAX_CHARS: usize = 56;
+    let mut title: String = normalised.chars().take(MAX_CHARS).collect();
+    if normalised.chars().count() > MAX_CHARS {
+        title.push('…');
+    }
+    if title.is_empty() { "New chat".to_owned() } else { title }
+}
+
 /// Store an explicit rate card. Rates are USD per million tokens and should
 /// only be written from a verified provider/model price source.
 pub fn set_model_pricing(
