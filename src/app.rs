@@ -37,34 +37,28 @@ pub fn build(application: &adw::Application) {
         file_list.clone(),
     );
     sidebar.set_size_request(210, -1);
-    let workspace = build_workspace(
-        project_name, active_chat, chat_messages, transcript_buffer,
-        transcript_scroll_ref, welcome_ref, root.clone(), content.clone(),
-    );
-
     let files_panel = gtk::Box::new(gtk::Orientation::Vertical, 8);
-    files_panel.set_size_request(180, -1);
-    files_panel.set_margin_top(12);
-    files_panel.set_margin_bottom(12);
-    files_panel.set_margin_start(10);
-    files_panel.set_margin_end(10);
-    let files_title = gtk::Label::new(Some("PROJECT FILES"));
+    files_panel.set_size_request(210, -1);
+    files_panel.set_margin_top(8);
+    files_panel.set_margin_bottom(8);
+    files_panel.set_margin_start(8);
+    files_panel.set_margin_end(8);
+    let files_title = gtk::Label::new(Some("EXPLORER"));
     files_title.add_css_class("caption-heading");
     files_title.add_css_class("dim-label");
     files_title.set_halign(gtk::Align::Start);
+    files_panel.append(&files_title);
     let files_scroll = gtk::ScrolledWindow::new();
-    files_scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+    files_scroll.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Automatic);
     files_scroll.set_child(Some(&file_list));
     files_scroll.set_vexpand(true);
-    files_panel.append(&files_title);
     files_panel.append(&files_scroll);
 
-    content.set_start_child(Some(&workspace));
-    content.set_end_child(Some(&files_panel));
-    content.set_resize_start_child(true);
-    content.set_resize_end_child(false);
-    content.set_shrink_start_child(false);
-    content.set_shrink_end_child(true);
+    let workspace = build_workspace(
+        project_name, active_chat, chat_messages, transcript_buffer,
+        transcript_scroll_ref, welcome_ref, root.clone(), content.clone(), files_panel.clone(),
+    );
+
     root.set_start_child(Some(&sidebar));
     root.set_end_child(Some(&content));
     root.set_resize_start_child(false);
@@ -277,6 +271,11 @@ fn build_sidebar(
     let welcome_for_new = welcome_ref.clone();
     let workspace_for_new = active_workspace.clone();
     new_chat.connect_clicked(move |_| {
+        // An empty draft remains the active chat until its first message is sent.
+        // This avoids accumulating empty "New chat" entries in the history.
+        if active_chat_for_new.get().is_some() && chat_messages_for_new.borrow().is_empty() {
+            return;
+        }
         let Some(workspace_id) = workspace_for_new.get() else {
             return;
         };
@@ -469,14 +468,14 @@ fn append_chat_row(
     history.append(&row);
 }
 
-/// Populate a compact, depth-limited project tree. Directories are listed
-/// before files and common build/VCS directories are omitted.
+/// Rebuild a compact, expandable project tree. Directories are sorted
+/// before files; noisy generated directories are omitted.
 fn populate_file_list(list: &gtk::ListBox, root: &std::path::Path) {
     while let Some(child) = list.first_child() {
         list.remove(&child);
     }
-    fn walk(list: &gtk::ListBox, dir: &std::path::Path, depth: usize, root: &std::path::Path) {
-        if depth > 4 { return; }
+    fn walk(container: &gtk::Box, dir: &std::path::Path, depth: usize, parent: &adw::ApplicationWindow) {
+        if depth > 8 { return; }
         let Ok(entries) = std::fs::read_dir(dir) else { return; };
         let mut entries: Vec<_> = entries.filter_map(Result::ok).collect();
         entries.sort_by_key(|entry| {
@@ -485,27 +484,85 @@ fn populate_file_list(list: &gtk::ListBox, root: &std::path::Path) {
         });
         for entry in entries {
             let name = entry.file_name().to_string_lossy().into_owned();
-            if matches!(name.as_str(), ".git" | "target" | "node_modules" | ".patch") {
+            if matches!(name.as_str(), ".git" | "target" | "node_modules" | ".patch" | ".idea" | ".venv") {
                 continue;
             }
             let path = entry.path();
-            let is_dir = entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false);
-            let relative = path.strip_prefix(root).unwrap_or(&path);
-            let label = gtk::Label::new(Some(&format!(
-                "{}{} {}",
-                "  ".repeat(depth),
-                if is_dir { "▸" } else { "·" },
-                relative.file_name().unwrap_or_default().to_string_lossy()
-            )));
-            label.set_halign(gtk::Align::Start);
-            label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
-            label.set_margin_top(2);
-            label.set_margin_bottom(2);
-            list.append(&label);
-            if is_dir { walk(list, &path, depth + 1, root); }
+            let Ok(kind) = entry.file_type() else { continue; };
+            if kind.is_dir() {
+                let expander = gtk::Expander::new(Some(&name));
+                expander.add_css_class("flat");
+                expander.set_hexpand(true);
+                let branch = gtk::Box::new(gtk::Orientation::Vertical, 1);
+                branch.add_css_class("patch-tree-branch");
+                walk(&branch, &path, depth + 1, parent);
+                expander.set_child(Some(&branch));
+                container.append(&expander);
+            } else if kind.is_file() {
+                let button = gtk::Button::new();
+                button.add_css_class("flat");
+                button.add_css_class("patch-tree-file");
+                button.set_halign(gtk::Align::Fill);
+                button.set_hexpand(true);
+                let row = gtk::Box::new(gtk::Orientation::Horizontal, 7);
+                row.set_margin_top(1);
+                row.set_margin_bottom(1);
+                let icon = gtk::Image::from_icon_name("text-x-generic-symbolic");
+                icon.add_css_class("dim-label");
+                icon.set_pixel_size(14);
+                let label = gtk::Label::new(Some(&name));
+                label.set_halign(gtk::Align::Start);
+                label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+                label.set_hexpand(true);
+                row.append(&icon);
+                row.append(&label);
+                button.set_child(Some(&row));
+                let file_path = path.clone();
+                let parent = parent.clone();
+                button.connect_clicked(move |_| open_file_preview(&parent, &file_path));
+                container.append(&button);
+            }
         }
     }
-    walk(list, root, 0, root);
+    let Some(parent) = list.root().and_downcast::<adw::ApplicationWindow>() else {
+        return;
+    };
+    let root_box = gtk::Box::new(gtk::Orientation::Vertical, 1);
+    walk(&root_box, root, 0, &parent);
+    list.append(&root_box);
+}
+
+fn open_file_preview(parent: &adw::ApplicationWindow, path: &std::path::Path) {
+    let dialog = gtk::Dialog::with_buttons(
+        Some(&path.file_name().unwrap_or_default().to_string_lossy()),
+        Some(parent),
+        gtk::DialogFlags::MODAL,
+        &[("Close", gtk::ResponseType::Close)],
+    );
+    dialog.set_default_size(760, 560);
+    let content = dialog.content_area();
+    let scroll = gtk::ScrolledWindow::new();
+    scroll.set_hexpand(true);
+    scroll.set_vexpand(true);
+    let view = gtk::TextView::new();
+    view.set_editable(false);
+    view.set_cursor_visible(false);
+    view.set_monospace(true);
+    view.set_wrap_mode(gtk::WrapMode::None);
+    view.set_left_margin(12);
+    view.set_right_margin(12);
+    view.set_top_margin(12);
+    view.set_bottom_margin(12);
+    let text = match std::fs::metadata(path) {
+        Ok(meta) if meta.len() > 2 * 1024 * 1024 => "Preview unavailable: files larger than 2 MiB are not loaded into the viewer.".to_owned(),
+        Ok(_) => std::fs::read_to_string(path).unwrap_or_else(|_| "Preview unavailable: this file is binary or is not valid UTF-8.".to_owned()),
+        Err(error) => format!("Could not read file: {error}"),
+    };
+    view.buffer().set_text(&text);
+    scroll.set_child(Some(&view));
+    content.append(&scroll);
+    dialog.connect_response(|dialog, _| dialog.close());
+    dialog.show();
 }
 
 fn build_workspace(
@@ -517,6 +574,7 @@ fn build_workspace(
     welcome_ref: Rc<RefCell<Option<gtk::DrawingArea>>>,
     root_paned: gtk::Paned,
     content_paned: gtk::Paned,
+    files_panel: gtk::Box,
 ) -> gtk::Box {
     let workspace = gtk::Box::new(gtk::Orientation::Vertical, 0);
     workspace.set_hexpand(true);
@@ -539,17 +597,6 @@ fn build_workspace(
     model.append_text("Discovering local models…");
     model.set_active(Some(0));
     header.pack_start(&model);
-
-    let files_toggle = gtk::Button::from_icon_name("folder-symbolic");
-    files_toggle.set_tooltip_text(Some("Show or hide project files"));
-    // The file browser is the end child of the workspace's parent Paned.
-    let content_for_click = content_paned.clone();
-    files_toggle.connect_clicked(move |_| {
-        if let Some(files) = content_for_click.end_child() {
-            files.set_visible(!files.is_visible());
-        }
-    });
-    header.pack_start(&files_toggle);
 
     let usage = UsageGauge::new();
     header.pack_end(&usage.widget);
@@ -599,6 +646,8 @@ fn build_workspace(
 
     let welcome = patch_logo(210, 40);
     welcome.set_halign(gtk::Align::Center);
+    welcome.set_valign(gtk::Align::Center);
+    welcome.set_vexpand(true);
     conversation.append(&welcome);
     *welcome_ref.borrow_mut() = Some(welcome.clone());
 
@@ -610,6 +659,7 @@ fn build_workspace(
     transcript.set_editable(false);
     transcript.set_cursor_visible(false);
     transcript.set_wrap_mode(gtk::WrapMode::WordChar);
+    transcript.add_css_class("patch-transcript");
     transcript.set_left_margin(18);
     transcript.set_right_margin(18);
     transcript.set_top_margin(18);
@@ -630,7 +680,8 @@ fn build_workspace(
              .patch-composer.plan-mode { border-color: #3987d7; background: alpha(#3987d7, 0.055); }\
              .patch-composer.build-mode { border-color: #f07832; background: alpha(#f07832, 0.075); }\
              .patch-mode.plan-mode { color: #65a9f2; background: alpha(#3987d7, 0.16); }\
-             .patch-mode.build-mode { color: #ff9858; background: alpha(#f07832, 0.18); }",
+             .patch-mode.build-mode { color: #ff9858; background: alpha(#f07832, 0.18); }\
+             textview.patch-transcript { background-color: @window_bg_color; color: @window_fg_color; }",
         );
         gtk::style_context_add_provider_for_display(
             &display,
@@ -930,9 +981,23 @@ fn build_workspace(
     composer.append(&prompt_overlay);
     composer.append(&composer_footer);
     composer_outer.append(&composer);
+
+    let main_area = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    main_area.set_hexpand(true);
+    main_area.set_vexpand(true);
+    main_area.append(&conversation);
+    main_area.append(&composer_outer);
+
+    content_paned.set_start_child(Some(&main_area));
+    content_paned.set_end_child(Some(&files_panel));
+    content_paned.set_resize_start_child(true);
+    content_paned.set_resize_end_child(true);
+    content_paned.set_shrink_start_child(false);
+    content_paned.set_shrink_end_child(true);
+    content_paned.set_position(820);
+
     workspace.append(&header);
-    workspace.append(&conversation);
-    workspace.append(&composer_outer);
+    workspace.append(&content_paned);
     workspace
 }
 
