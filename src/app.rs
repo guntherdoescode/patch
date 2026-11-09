@@ -332,15 +332,15 @@ fn append_chat_row(
     select.set_hexpand(true);
     select.set_halign(gtk::Align::Fill);
     select.add_css_class("flat");
-    let active_chat = active_chat.clone();
-    let chat_messages = chat_messages.clone();
-    let transcript_buffer = transcript_buffer.clone();
-    let transcript_scroll = transcript_scroll.clone();
-    let welcome = welcome.clone();
+    let active_chat_for_select = active_chat.clone();
+    let chat_messages_for_select = chat_messages.clone();
+    let transcript_buffer_for_select = transcript_buffer.clone();
+    let transcript_scroll_for_select = transcript_scroll.clone();
+    let welcome_for_select = welcome.clone();
     select.connect_clicked(move |_| {
         match crate::storage::list_messages(chat_id) {
             Ok(messages) => {
-                active_chat.set(Some(chat_id));
+                active_chat_for_select.set(Some(chat_id));
                 let mut restored = Vec::with_capacity(messages.len());
                 let mut rendered = String::new();
                 for (role, content) in messages {
@@ -351,14 +351,14 @@ fn append_chat_row(
                     rendered.push_str("\n\n");
                     restored.push(crate::providers::ollama::ChatMessage { role, content });
                 }
-                *chat_messages.borrow_mut() = restored;
-                if let Some(buffer) = transcript_buffer.borrow().as_ref() {
+                *chat_messages_for_select.borrow_mut() = restored;
+                if let Some(buffer) = transcript_buffer_for_select.borrow().as_ref() {
                     buffer.set_text(&rendered);
                 }
-                if let Some(scroll) = transcript_scroll.borrow().as_ref() {
+                if let Some(scroll) = transcript_scroll_for_select.borrow().as_ref() {
                     scroll.set_visible(true);
                 }
-                if let Some(logo) = welcome.borrow().as_ref() {
+                if let Some(logo) = welcome_for_select.borrow().as_ref() {
                     logo.set_visible(false);
                 }
             }
@@ -427,6 +427,7 @@ fn append_chat_row(
         let transcript_buffer = transcript_buffer_for_delete.clone();
         let transcript_scroll = transcript_scroll_for_delete.clone();
         let welcome = welcome_for_delete.clone();
+        let row_for_response = row_for_delete.clone();
         dialog.connect_response(move |dialog, response| {
             if response == gtk::ResponseType::Accept {
                 match crate::storage::delete_chat(chat_id) {
@@ -444,7 +445,7 @@ fn append_chat_row(
                                 logo.set_visible(true);
                             }
                         }
-                        history.remove(&row_for_delete);
+                        history.remove(&row_for_response);
                     }
                     Err(error) => eprintln!("Could not delete chat: {error}"),
                 }
