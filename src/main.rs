@@ -4,6 +4,7 @@ mod providers;
 mod storage;
 mod shortcuts;
 mod usage;
+mod mcp;
 
 use adw::prelude::*;
 
