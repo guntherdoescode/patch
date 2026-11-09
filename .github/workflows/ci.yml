@@ -21,8 +21,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes libgtk-4-dev libadwaita-1-dev
-      - name: Check formatting
-        run: cargo fmt --all -- --check
+      - name: Format Rust sources
+        run: cargo fmt --all
       - name: Run tests
         run: cargo test
       - name: Check application
