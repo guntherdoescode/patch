@@ -925,10 +925,11 @@ fn build_workspace(
             transcript_buffer.insert(&mut end, &format!("You\n{prompt_text}\n\nPatch\n"));
 
             let mut request_messages = chat_messages.borrow().clone();
-            let mode_instruction = if build_mode.get() {
-                "You are Patch, a coding assistant in Build mode. Help implement requested changes. Do not claim to have edited files or run commands unless tools actually performed those actions."
+            let is_build = build_mode.get();
+            let mode_instruction = if is_build {
+                "You are Patch, a coding agent in Build mode. You have workspace tools. Inspect the project before making changes. Use tools rather than guessing. You may create, edit and delete files only inside the active workspace. Never claim an action succeeded unless its tool call succeeded. Do not attempt access outside the workspace."
             } else {
-                "You are Patch, a coding assistant in Plan mode. Analyse and explain; do not propose that you have modified files or run commands."
+                "You are Patch, a coding agent in Plan mode. You have read-only workspace tools: inspect files, search and run permitted read-only commands. Never modify files or run mutating commands. Use tools to inspect the project rather than claiming you cannot see it."
             };
             request_messages.insert(0, crate::providers::ollama::ChatMessage {
                 role: "system".to_owned(),
@@ -944,12 +945,46 @@ fn build_workspace(
             });
 
             let (tx, rx) = std::sync::mpsc::channel::<StreamEvent>();
+            let workspace_root = active_workspace_for_send.get()
+                .and_then(|id| crate::storage::workspace_path(id).ok());
             std::thread::spawn(move || {
-                let result = crate::providers::ollama::OllamaClient::default().chat_stream(
-                    &model_name,
-                    &request_messages,
-                    |chunk| { let _ = tx.send(StreamEvent::Chunk(chunk)); },
-                ).map_err(|error| error.to_string());
+                let result = (|| -> Result<crate::providers::ollama::ChatUsage, String> {
+                    let root = workspace_root.ok_or_else(|| "No active workspace is open.".to_owned())?;
+                    let workspace = crate::mcp::Workspace::open(root).map_err(|e| e.to_string())?;
+                    let definitions = crate::mcp::agent::native_tool_definitions();
+                    crate::providers::ollama::OllamaClient::default().chat_with_tools(
+                        &model_name,
+                        &request_messages,
+                        &definitions,
+                        |name, args| {
+                            let string_arg = |key: &str| args.get(key).and_then(serde_json::Value::as_str).unwrap_or("").to_owned();
+                            match name {
+                                "get_current_directory" => Ok(crate::mcp::tools::current_directory(&workspace)),
+                                "list_directory" => crate::mcp::tools::list_directory(&workspace, &string_arg("path"))
+                                    .map(|items| items.join("\\n")).map_err(|e| e.to_string()),
+                                "read_file" => crate::mcp::tools::read_file(&workspace, &string_arg("path"))
+                                    .map_err(|e| e.to_string()),
+                                "search_files" => crate::mcp::tools::search_files(&workspace, &string_arg("query"))
+                                    .map(|items| items.join("\\n")).map_err(|e| e.to_string()),
+                                "run_read_only" => {
+                                    let program = string_arg("program");
+                                    let args = args.get("args").and_then(serde_json::Value::as_array)
+                                        .map(|values| values.iter().filter_map(serde_json::Value::as_str).map(str::to_owned).collect::<Vec<_>>())
+                                        .unwrap_or_default();
+                                    crate::mcp::commands::run_read_only(&workspace, &program, &args)
+                                        .map_err(|e| e.to_string())
+                                }
+                                "write_file" if is_build => crate::mcp::tools::write_file(&workspace, &string_arg("path"), &string_arg("contents"))
+                                    .map(|_| "File written successfully.".to_owned()).map_err(|e| e.to_string()),
+                                "delete_file" if is_build => crate::mcp::tools::delete_file(&workspace, &string_arg("path"))
+                                    .map(|_| "File deleted successfully.".to_owned()).map_err(|e| e.to_string()),
+                                "write_file" | "delete_file" => Err("Denied: file mutations are unavailable in Plan mode.".to_owned()),
+                                _ => Err(format!("Unknown tool: {name}")),
+                            }
+                        },
+                        |chunk| { let _ = tx.send(StreamEvent::Chunk(chunk)); },
+                    ).map_err(|e| e.to_string())
+                })();
                 let _ = tx.send(StreamEvent::Finished(result));
             });
 
