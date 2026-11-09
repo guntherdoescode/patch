@@ -1,4 +1,4 @@
-use gpui::{App, Context, IntoElement, Render, Window, div, prelude::*, rgb};
+use gpui::{App, Context, IntoElement, Render, Window, div, prelude::*, px, rgb};
 
 const BG: u32 = 0x111315;
 const SIDEBAR: u32 = 0x191c1f;
