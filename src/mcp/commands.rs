@@ -24,10 +24,13 @@ pub fn run_read_only(workspace: &Workspace, program: &str, args: &[String]) -> R
     }
     // Reject options that turn nominally read-only utilities into execution or
     // mutation primitives. No shell is ever involved.
-    if program == "find" && args.iter().any(|a| ["-exec", "-execdir", "-delete", "-ok", "-okdir"].contains(&a.as_str())) {
+    if program == "find" && args.iter().any(|a| ["-exec", "-execdir", "-delete", "-ok", "-okdir", "-fprint", "-fprintf", "-fls"].contains(&a.as_str())) {
         return Err(CommandError::NotAllowed);
     }
-    if program == "sed" && args.iter().any(|a| a == "-i" || a.starts_with("--in-place")) {
+    if program == "grep" && args.iter().any(|a| a == "-f" || a == "--file" || a.starts_with("--file=")) {
+        return Err(CommandError::NotAllowed);
+    }
+    if program == "wc" && args.iter().any(|a| a.starts_with("--files0-from")) {
         return Err(CommandError::NotAllowed);
     }
     if program == "rg" && args.iter().any(|a| a == "--pre" || a.starts_with("--pre=")) {
@@ -69,6 +72,9 @@ pub fn run_read_only(workspace: &Workspace, program: &str, args: &[String]) -> R
     }
 
     let mut command = Command::new(program);
+    if program == "git" {
+        command.arg("-c").arg("core.fsmonitor=false").arg("-c").arg("core.pager=cat").arg("--no-pager");
+    }
     command.args(args).current_dir(workspace.root())
         .env("GIT_CONFIG_NOSYSTEM", "1").env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_OPTIONAL_LOCKS", "0").env("GIT_PAGER", "cat").env("PAGER", "cat")
