@@ -251,11 +251,7 @@ fn build_sidebar(
                             }
                         }
                         Ok(_) => {
-                            let label = gtk::Label::new(Some("No chats in this workspace yet."));
-                            label.add_css_class("dim-label");
-                            label.set_margin_top(10);
-                            label.set_margin_bottom(10);
-                            history_list.append(&label);
+                            // Keep the history list empty until the first chat is created.
                         }
                         Err(error) => eprintln!("Could not load chat history: {error}"),
                     }
@@ -692,13 +688,14 @@ fn build_workspace(
     let composer = gtk::Box::new(gtk::Orientation::Vertical, 4);
     composer.add_css_class("patch-composer");
     composer.add_css_class("plan-mode");
-    composer.set_size_request(-1, 92);
     composer.set_vexpand(false);
 
     let prompt_scroll = gtk::ScrolledWindow::new();
     prompt_scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
     prompt_scroll.set_vexpand(false);
+    prompt_scroll.set_propagate_natural_height(true);
     prompt_scroll.set_min_content_height(42);
+    prompt_scroll.set_max_content_height(224);
 
     let prompt = gtk::TextView::new();
     prompt.set_wrap_mode(gtk::WrapMode::WordChar);
@@ -725,11 +722,12 @@ fn build_workspace(
     let prompt_buffer = prompt.buffer();
     {
         let placeholder = placeholder.clone();
+        let prompt = prompt.clone();
         prompt_buffer.connect_changed(move |buffer| {
-            let empty = buffer
-                .text(&buffer.start_iter(), &buffer.end_iter(), false)
-                .is_empty();
-            placeholder.set_visible(empty);
+            let text = buffer.text(&buffer.start_iter(), &buffer.end_iter(), false);
+            placeholder.set_visible(text.is_empty());
+            let lines = text.lines().count().max(1).min(10);
+            prompt.set_size_request(-1, (lines as i32 * 22).max(42));
         });
     }
     // Prompt submission is connected to the local Ollama streaming API below.
@@ -798,19 +796,15 @@ fn build_workspace(
         mode_button.connect_clicked(move |_| set_mode(!build_mode.get()));
     }
 
-    let key_controller = gtk::EventControllerKey::new();
-    {
-        let build_mode = build_mode.clone();
-        key_controller.connect_key_pressed(move |_, key, _, _| {
-            if key == gtk::gdk::Key::Tab {
-                set_mode(!build_mode.get());
-                gtk::glib::Propagation::Stop
-            } else {
-                gtk::glib::Propagation::Proceed
-            }
-        });
-    }
-    prompt.add_controller(key_controller);
+    crate::shortcuts::install_prompt_shortcuts(
+        &prompt,
+        &send,
+        {
+            let build_mode = build_mode.clone();
+            let set_mode = set_mode.clone();
+            move || set_mode(!build_mode.get())
+        },
+    );
 
     {
         let prompt_buffer = prompt_buffer.clone();
@@ -858,10 +852,17 @@ fn build_workspace(
                     };
                     match crate::storage::create_chat(workspace_id) {
                         Ok(id) => {
+                            let title = crate::storage::chat_title_from_message(&prompt_text);
+                            if let Err(error) = crate::storage::rename_chat(id, &title) {
+                                eprintln!("Could not set initial chat title: {error}");
+                            }
                             active_chat.set(Some(id));
                             if let Some(history) = history_for_send.borrow().as_ref() {
+                                while let Some(child) = history.first_child() {
+                                    history.remove(&child);
+                                }
                                 append_chat_row(
-                                    history, &parent_for_send, id, "New chat",
+                                    history, &parent_for_send, id, &title,
                                     &active_workspace_for_send, &active_chat, &chat_messages,
                                     &transcript_buffer_ref_for_send,
                                     &transcript_scroll_ref_for_send,
