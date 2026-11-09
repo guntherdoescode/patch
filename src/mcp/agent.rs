@@ -13,12 +13,35 @@ pub fn native_tool_definitions() -> Value {
     ])
 }
 
+/// Extract structured calls from Ollama's native tool_calls field. Some
+/// tool-capable models incorrectly print the same call as a JSON object in
+/// message.content; accept that form only when it is an exact, known tool
+/// envelope, never by scraping arbitrary prose.
 pub fn tool_calls(message: &Value) -> Vec<(String, Value)> {
-    message.pointer("/message/tool_calls").and_then(Value::as_array).into_iter().flatten()
-        .filter_map(|call| {
+    let known = ["get_current_directory", "list_directory", "read_file", "search_files", "run_read_only", "write_file", "delete_file"];
+    if let Some(calls) = message.pointer("/message/tool_calls").and_then(Value::as_array) {
+        let parsed = calls.iter().filter_map(|call| {
             let function = call.get("function")?;
             let name = function.get("name")?.as_str()?.to_owned();
+            if !known.contains(&name.as_str()) { return None; }
             let arguments = function.get("arguments").cloned().unwrap_or_else(|| json!({}));
             Some((name, arguments))
-        }).collect()
+        }).collect::<Vec<_>>();
+        if !parsed.is_empty() { return parsed; }
+    }
+
+    let Some(content) = message.pointer("/message/content").and_then(Value::as_str) else {
+        return Vec::new();
+    };
+    let Ok(value) = serde_json::from_str::<Value>(content.trim()) else {
+        return Vec::new();
+    };
+    let name = value.get("name").and_then(Value::as_str);
+    let arguments = value.get("arguments");
+    match (name, arguments) {
+        (Some(name), Some(arguments)) if known.contains(&name) && arguments.is_object() => {
+            vec![(name.to_owned(), arguments.clone())]
+        }
+        _ => Vec::new(),
+    }
 }
