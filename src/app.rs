@@ -177,6 +177,11 @@ fn build_sidebar(
     let name_label = project_name.clone();
     let history_list = history.clone();
     let workspace_id = active_workspace.clone();
+    let chat_messages_for_project = chat_messages.clone();
+    let transcript_buffer_for_project = transcript_buffer.clone();
+    let transcript_scroll_for_project = transcript_scroll_ref.clone();
+    let welcome_for_project = welcome_ref.clone();
+    let file_list_for_project = file_list.clone();
 
     project.connect_clicked(move |_| {
         // Use GTK's in-process dialog rather than FileChooserNative. The
@@ -222,8 +227,8 @@ fn build_sidebar(
                             for (chat_id, title) in chats {
                                 append_chat_row(
                                     &history_list, &parent, chat_id, &title,
-                                    &workspace_id, &active_chat, &chat_messages,
-                                    &transcript_buffer, &transcript_scroll_ref, &welcome_ref,
+                                    &workspace_id, &active_chat, &chat_messages_for_project,
+                                    &transcript_buffer_for_project, &transcript_scroll_for_project, &welcome_for_project,
                                 );
                             }
                         }
@@ -236,7 +241,7 @@ fn build_sidebar(
                         }
                         Err(error) => eprintln!("Could not load chat history: {error}"),
                     }
-                    populate_file_list(&file_list, &path);
+                    populate_file_list(&file_list_for_project, &path);
                 }
                 Err(error) => eprintln!("Could not register workspace: {error}"),
             }
@@ -295,7 +300,7 @@ fn append_chat_row(
     parent: &adw::ApplicationWindow,
     chat_id: i64,
     title: &str,
-    workspace_id: &Rc<Cell<Option<i64>>>,
+    _workspace_id: &Rc<Cell<Option<i64>>>,
     active_chat: &Rc<Cell<Option<i64>>>,
     chat_messages: &Rc<RefCell<Vec<crate::providers::ollama::ChatMessage>>>,
     transcript_buffer: &Rc<RefCell<Option<gtk::TextBuffer>>>,
@@ -303,6 +308,8 @@ fn append_chat_row(
     welcome: &Rc<RefCell<Option<gtk::DrawingArea>>>,
 ) {
     let row = gtk::ListBoxRow::new();
+    let row_for_delete = row.clone();
+    let title_owned = title.to_owned();
     let line = gtk::Box::new(gtk::Orientation::Horizontal, 4);
     line.set_margin_top(4);
     line.set_margin_bottom(4);
@@ -360,7 +367,7 @@ fn append_chat_row(
             &[("Cancel", gtk::ResponseType::Cancel), ("Rename", gtk::ResponseType::Accept)],
         );
         let entry = gtk::Entry::new();
-        entry.set_text(title);
+        entry.set_text(&title_owned);
         entry.set_activates_default(true);
         dialog.set_default_response(gtk::ResponseType::Accept);
         dialog.content_area().append(&entry);
@@ -387,6 +394,7 @@ fn append_chat_row(
     delete.set_tooltip_text(Some("Delete chat"));
     let parent_for_delete = parent.clone();
     let history_for_delete = history.clone();
+    let row_for_delete = row_for_delete.clone();
     let active_chat_for_delete = active_chat.clone();
     let chat_messages_for_delete = chat_messages.clone();
     let transcript_buffer_for_delete = transcript_buffer.clone();
@@ -424,14 +432,7 @@ fn append_chat_row(
                                 logo.set_visible(true);
                             }
                         }
-                        if let Some(row) = history.row_at_index(
-                            (0..history.observe_children().n_items())
-                                .find(|index| history.row_at_index(*index as i32)
-                                    .map(|candidate| candidate == row).unwrap_or(false))
-                                .unwrap_or(0) as i32
-                        ) {
-                            history.remove(&row);
-                        }
+                        history.remove(&row_for_delete);
                     }
                     Err(error) => eprintln!("Could not delete chat: {error}"),
                 }
