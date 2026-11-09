@@ -15,6 +15,7 @@ pub fn build(application: &adw::Application) {
     let root = gtk::Paned::new(gtk::Orientation::Horizontal);
     root.set_wide_handle(true);
     root.set_position(255);
+    root.set_min_position(220);
     // Keep the chat sidebar within the window and reserve usable space for the editor.
     root.connect_notify_local(Some("position"), |paned, _| {
         let width = paned.width();
@@ -55,7 +56,9 @@ pub fn build(application: &adw::Application) {
         transcript_buffer.clone(), transcript_scroll_ref.clone(), welcome_ref.clone(),
         file_list.clone(), active_workspace.clone(), history_ref.clone(),
     );
-    sidebar.set_size_request(180, -1);
+    // Never allow GTK's paned allocation to compress the sidebar below its
+    // content width; this was clipping the first few pixels of the Patch logo.
+    sidebar.set_size_request(220, -1);
     sidebar.set_hexpand(false);
     let files_panel = gtk::Box::new(gtk::Orientation::Vertical, 8);
     files_panel.set_size_request(180, -1);
@@ -85,7 +88,7 @@ pub fn build(application: &adw::Application) {
     root.set_end_child(Some(&workspace));
     root.set_resize_start_child(true);
     root.set_resize_end_child(true);
-    root.set_shrink_start_child(true);
+    root.set_shrink_start_child(false);
     root.set_shrink_end_child(true);
     window.set_content(Some(&root));
     window.present();
