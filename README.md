@@ -4,11 +4,11 @@
 
 A native Rust coding agent built around a simple principle: **the model may propose actions, but the application owns permission enforcement.**
 
-Patch is being developed as a desktop GUI first. The initial interface is a native GTK4/libadwaita shell, follows the desktop light/dark preference, and is intended to sit comfortably on COSMIC and other GTK desktops.
+Patch is being developed as a desktop GUI first. The `gpui-preview` branch replaces the original GTK4/libadwaita shell with GPUI Community Edition (GPUI-CE), a GPU-accelerated Rust UI framework.
 
 ## Current status
 
-Early foundation. The repository contains the GTK desktop shell, workspace-scoped SQLite storage, local Ollama discovery, token accounting primitives and an initial permission policy. The full agent loop, streaming, editing and hosted API adapters are not implemented yet.
+Early migration preview. The GPUI branch currently contains the new application bootstrap and a first-pass interface; workspace selection, editable prompt composition, chat streaming and model discovery still need to be ported into the new UI. The existing SQLite storage, Ollama client, token accounting and permission policy remain in place.
 
 ## Design principles
 
@@ -24,7 +24,7 @@ Early foundation. The repository contains the GTK desktop shell, workspace-scope
 
 | Area | Responsibility |
 | --- | --- |
-| app | GTK application and view composition |
+| app | GPUI application and view composition |
 | agent | Conversation loop, streaming events and context management |
 | providers | Provider interface, Ollama discovery and remote APIs |
 | permissions | Plan/Build policy and approval decisions |
@@ -37,7 +37,7 @@ Early foundation. The repository contains the GTK desktop shell, workspace-scope
 
 ## Development
 
-System GTK4 and libadwaita development packages are required.
+GPUI's Linux development dependencies are required. See the GPUI-CE platform documentation for the current package list.
 
     cargo run
 
