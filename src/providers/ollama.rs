@@ -182,17 +182,55 @@ impl OllamaClient {
             }
             let message = value.get("message").cloned()
                 .ok_or_else(|| ChatError::InvalidResponse("missing message".into()))?;
-            let parsed_calls = crate::mcp::agent::tool_calls(&serde_json::json!({"message": message}));
+            // Only accept calls for tools advertised in this request. The MCP
+            // catalogue can contain arbitrary server-defined names; the provider
+            // adapter must not maintain its own hard-coded tool-name whitelist.
+            let allowed_tools = tools.as_array().into_iter().flatten()
+                .filter_map(|tool| tool.pointer("/function/name").and_then(Value::as_str))
+                .map(str::to_owned)
+                .collect::<Vec<_>>();
+            let parsed_calls = crate::mcp::agent::tool_calls(
+                &serde_json::json!({"message": message}),
+                &allowed_tools,
+            );
             if parsed_calls.is_empty() {
                 if let Some(content) = message.get("content").and_then(Value::as_str) {
                     if !content.is_empty() { on_chunk(content.to_owned()); }
                 }
                 return Ok(usage);
             }
-            conversation.push(message);
+
+            // Ollama expects an assistant tool_calls message followed by one
+            // tool message per call. Some models emit a JSON envelope in plain
+            // content instead; convert that into the same canonical shape rather
+            // than replaying the JSON as ordinary assistant prose.
+            let mut assistant_message = message.clone();
+            if assistant_message.get("tool_calls").and_then(Value::as_array).is_none() {
+                assistant_message["content"] = Value::String(String::new());
+                assistant_message["tool_calls"] = Value::Array(
+                    parsed_calls.iter().enumerate().map(|(index, (name, arguments))| {
+                        serde_json::json!({
+                            "type": "function",
+                            "function": {
+                                "index": index,
+                                "name": name,
+                                "arguments": arguments
+                            }
+                        })
+                    }).collect()
+                );
+            }
+            conversation.push(assistant_message);
+
             for (name, arguments) in parsed_calls {
-                let result = execute(&name, arguments).unwrap_or_else(|error| format!("Tool error: {error}"));
-                conversation.push(serde_json::json!({"role":"tool","content":result}));
+                let result = execute(&name, arguments)
+                    .unwrap_or_else(|error| format!("Tool error: {error}"));
+                // tool_name is part of Ollama's documented message format.
+                conversation.push(serde_json::json!({
+                    "role": "tool",
+                    "tool_name": name,
+                    "content": result
+                }));
             }
         }
         Err(ChatError::Provider("tool-call limit reached (8 rounds)".into()))
