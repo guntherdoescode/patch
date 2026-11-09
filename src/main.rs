@@ -2,6 +2,7 @@ mod app;
 mod permissions;
 mod providers;
 mod storage;
+mod shortcuts;
 mod usage;
 
 use adw::prelude::*;
