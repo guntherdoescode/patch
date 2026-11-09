@@ -28,7 +28,7 @@ pub fn read_file(ws: &Workspace, path: &str, external: bool) -> Result<String, T
 }
 
 pub fn search_files(ws: &Workspace, query: &str) -> Result<Vec<String>, ToolError> {
-    let output = commands::run_read_only(ws, "rg", &["--line-number".into(), "--hidden".into(), "--glob".into(), "!.git".into(), query.into(), ".".into()])
+    let output = commands::run_read_only(ws, "rg", &["--line-number".into(), "--hidden".into(), "--glob".into(), "!.git".into(), "--".into(), query.into(), ".".into()])
         .map_err(|e| ToolError::Command(e.to_string()))?;
     Ok(output.lines().take(500).map(str::to_owned).collect())
 }
