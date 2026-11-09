@@ -518,7 +518,7 @@ fn build_workspace(
     let header = gtk::HeaderBar::new();
     header.set_title_widget(Some(&project_name));
 
-    let sidebar_toggle = gtk::Button::from_icon_name("sidebar-show-symbolic");
+    let sidebar_toggle = gtk::Button::from_icon_name("open-menu-symbolic");
     sidebar_toggle.set_tooltip_text(Some("Show or hide chat sidebar"));
     let root_for_toggle = root_paned.clone();
     sidebar_toggle.connect_clicked(move |_| {
@@ -533,7 +533,7 @@ fn build_workspace(
     model.set_active(Some(0));
     header.pack_start(&model);
 
-    let files_toggle = gtk::Button::from_icon_name("view-list-symbolic");
+    let files_toggle = gtk::Button::from_icon_name("folder-symbolic");
     files_toggle.set_tooltip_text(Some("Show or hide project files"));
     // The file browser is the end child of the workspace's parent Paned.
     let content_for_click = content_paned.clone();
