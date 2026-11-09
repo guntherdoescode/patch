@@ -143,6 +143,65 @@ impl OllamaClient {
         Ok(usage)
     }
 
+    /// Run a bounded tool-calling turn. Tool execution is delegated to the
+    /// caller so the central permission layer remains authoritative.
+    pub fn chat_with_tools(
+        &self,
+        model: &str,
+        messages: &[ChatMessage],
+        tools: &Value,
+        mut execute: impl FnMut(&str, Value) -> Result<String, String>,
+        mut on_chunk: impl FnMut(String),
+    ) -> Result<ChatUsage, ChatError> {
+        let mut conversation = messages.iter().map(|message| serde_json::json!({
+            "role": message.role, "content": message.content
+        })).collect::<Vec<_>>();
+        let mut usage = ChatUsage::default();
+
+        for _ in 0..8 {
+            let response = self.http
+                .post(format!("{}/api/chat", self.base_url))
+                .json(&serde_json::json!({
+                    "model": model, "messages": conversation, "tools": tools, "stream": false
+                }))
+                .timeout(Duration::from_secs(300))
+                .send()
+                .map_err(|error| ChatError::Request(error.to_string()))?
+                .error_for_status()
+                .map_err(|error| ChatError::Request(error.to_string()))?;
+            let value: Value = response.json()
+                .map_err(|error| ChatError::InvalidResponse(error.to_string()))?;
+            if let Some(error) = value.get("error").and_then(Value::as_str) {
+                return Err(ChatError::Provider(error.to_owned()));
+            }
+            if let Some(count) = value.get("prompt_eval_count").and_then(Value::as_u64) {
+                usage.prompt_tokens = Some(usage.prompt_tokens.unwrap_or(0).saturating_add(count));
+            }
+            if let Some(count) = value.get("eval_count").and_then(Value::as_u64) {
+                usage.completion_tokens = Some(usage.completion_tokens.unwrap_or(0).saturating_add(count));
+            }
+            let message = value.get("message").cloned()
+                .ok_or_else(|| ChatError::InvalidResponse("missing message".into()))?;
+            let calls = message.get("tool_calls").and_then(Value::as_array).cloned().unwrap_or_default();
+            if calls.is_empty() {
+                if let Some(content) = message.get("content").and_then(Value::as_str) {
+                    if !content.is_empty() { on_chunk(content.to_owned()); }
+                }
+                return Ok(usage);
+            }
+            conversation.push(message);
+            for call in calls {
+                let function = call.get("function").ok_or_else(|| ChatError::InvalidResponse("malformed tool call".into()))?;
+                let name = function.get("name").and_then(Value::as_str)
+                    .ok_or_else(|| ChatError::InvalidResponse("tool call has no name".into()))?;
+                let arguments = function.get("arguments").cloned().unwrap_or_else(|| serde_json::json!({}));
+                let result = execute(name, arguments).unwrap_or_else(|error| format!("Tool error: {error}"));
+                conversation.push(serde_json::json!({"role":"tool","content":result}));
+            }
+        }
+        Err(ChatError::Provider("tool-call limit reached (8 rounds)".into()))
+    }
+
     pub fn model_info(&self, model: &str) -> Result<OllamaModelInfo, OllamaError> {
         let response = self.http
             .post(format!("{}/api/show", self.base_url))
