@@ -1,4 +1,4 @@
-use gpui_kit::gpui::{Context, IntoElement, PathPromptOptions, Render, Window, div, prelude::*, px, rgb};
+use gpui_kit::gpui::{self, Context, IntoElement, PathPromptOptions, Render, Window, div, prelude::*, px, rgb};
 use gpui_kit::base::input::{Textarea, TextareaState};
 use std::{path::PathBuf, thread};
 
@@ -195,7 +195,7 @@ impl Render for PatchApp {
             div().flex().flex_col().gap_1().children(chats.iter().map(|(id, title)| {
                 let id = *id;
                 let selected = active == Some(id);
-                div().id(("chat-row", id)).w_full().px_2().py_2().rounded_md()
+                div().id(("chat-row", id as u64)).w_full().px_2().py_2().rounded_md()
                     .bg(rgb(if selected { PANEL } else { SIDEBAR }))
                     .text_size(px(12.)).cursor_pointer().child(title.clone())
                     .on_click(cx.listener(move |this, _, _, cx| this.select_chat(id, cx)))
@@ -270,7 +270,7 @@ impl Render for PatchApp {
         };
 
         let conversation = div().flex_1().w_full().px_8().py_5().flex().flex_col()
-            .gap_3().overflow_y_scroll().child(transcript_view);
+            .gap_3().overflow_y_scrollbar().child(transcript_view);
 
         let composer_box = div().w_full().max_w(px(960.)).mx_auto().p_3().rounded_lg()
             .bg(rgb(PANEL)).border_1()
