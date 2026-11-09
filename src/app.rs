@@ -842,6 +842,14 @@ fn build_workspace(
             if prompt_text.is_empty() {
                 return;
             }
+            let Some(model_name) = model.active_text().map(|value| value.to_string()) else {
+                return;
+            };
+            if model_name.starts_with("Discovering") || model_name.starts_with("No local")
+                || model_name.starts_with("Ollama unavailable")
+            {
+                return;
+            }
             let chat_id = match active_chat.get() {
                 Some(id) => id,
                 None => {
@@ -869,14 +877,6 @@ fn build_workspace(
                     }
                 }
             };
-            let Some(model_name) = model.active_text().map(|value| value.to_string()) else {
-                return;
-            };
-            if model_name.starts_with("Discovering") || model_name.starts_with("No local")
-                || model_name.starts_with("Ollama unavailable")
-            {
-                return;
-            }
 
             busy.set(true);
             send_button.set_sensitive(false);
