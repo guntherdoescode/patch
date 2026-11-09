@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, gpui-preview]
   pull_request:
     branches: [main]
 
@@ -17,13 +17,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - name: Install GTK dependencies
+      - name: Install GPUI Linux dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes libgtk-4-dev libadwaita-1-dev
+          sudo apt-get install --yes \
+            libfontconfig1-dev libfreetype-dev libxkbcommon-dev \
+            libwayland-dev libx11-xcb-dev libxcb-randr0-dev \
+            libxcb-shape0-dev libxcb-xfixes0-dev libxcb-xkb-dev \
+            libxkbcommon-x11-dev libvulkan-dev libasound2-dev
       - name: Format Rust sources
-        run: cargo fmt --all
+        run: cargo fmt --all -- --check
       - name: Run tests
-        run: cargo test
+        run: cargo test --locked
       - name: Check application
-        run: cargo check
+        run: cargo check --locked
