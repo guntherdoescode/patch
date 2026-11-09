@@ -50,7 +50,8 @@ pub fn run_read_only(workspace: &Workspace, program: &str, args: &[String]) -> R
     // Validate path operands separately from search expressions/options so
     // read-only commands cannot be used to read arbitrary host files.
     let path_operands: Vec<&str> = match program {
-        "date" => Vec::new(),\n        "pwd" => {
+        "date" => Vec::new(),
+        "pwd" => {
             if !args.is_empty() { return Err(CommandError::NotAllowed); }
             Vec::new()
         }
