@@ -3,7 +3,7 @@ use gpui_kit::base::input::{Textarea, TextareaState};
 use gpui_kit::component::scroll::ScrollableElement;
 use std::{path::PathBuf, thread};
 
-const BG:u32=0x111315; const SIDEBAR:u32=0x191c1f; const PANEL:u32=0x202428;
+const BG:u32=0x1f1f1f; const SIDEBAR:u32=0x1b1b1b; const PANEL:u32=0x303030;
 const BORDER:u32=0x30363b; const TEXT:u32=0xe8e9e9; const MUTED:u32=0x92999f;
 const ACCENT:u32=0xff5100; const BLUE:u32=0x3987d7;
 
@@ -203,12 +203,12 @@ impl Render for PatchApp {
             }))
         };
 
-        let sidebar = div().w(px(248.)).h_full().flex().flex_col().gap_4().p_4()
+        let sidebar = div().w(px(260.)).h_full().flex().flex_col().gap_4().p_4()
             .bg(rgb(SIDEBAR)).border_r_1().border_color(rgb(BORDER))
             .child(
-                div().flex().items_center().gap_2()
-                    .child(div().w(px(9.)).h(px(9.)).rounded_sm().bg(rgb(ACCENT)))
-                    .child(div().text_size(px(22.)).font_weight(gpui_kit::gpui::FontWeight::BOLD).child("PATCH"))
+                div().flex().items_center()
+                    .child(div().text_size(px(25.)).font_weight(gpui_kit::gpui::FontWeight::BLACK)
+                        .text_color(rgb(ACCENT)).child("P A T C H"))
             )
             .child(
                 div().id("new-chat").w_full().px_3().py_2().rounded_md()
@@ -233,16 +233,16 @@ impl Render for PatchApp {
             .child(div().flex_1())
             .child(div().text_size(px(11.)).text_color(rgb(MUTED)).child("PATCH  ·  GPUI"));
 
-        let header = div().h(px(58.)).w_full().px_6().flex().items_center().justify_between()
+        let header = div().h(px(50.)).w_full().px_4().flex().items_center().justify_between()
             .border_b_1().border_color(rgb(BORDER))
-            .child(div().text_size(px(13.)).child(workspace.clone()))
+            .child(
+                div().id("model-selector").px_3().py_2().rounded_md().bg(rgb(PANEL))
+                    .border_1().border_color(rgb(BORDER)).text_size(px(12.)).cursor_pointer()
+                    .child(format!("{model}  ▾")).on_click(cx.listener(Self::toggle_models))
+            )
+            .child(div().text_size(px(13.)).font_weight(gpui::FontWeight::BOLD).child(workspace.clone()))
             .child(
                 div().flex().items_center().gap_2()
-                    .child(
-                        div().id("model-selector").px_3().py_2().rounded_md().bg(rgb(PANEL))
-                            .border_1().border_color(rgb(BORDER)).text_size(px(11.)).cursor_pointer()
-                            .child(format!("{model}  ▾")).on_click(cx.listener(Self::toggle_models))
-                    )
                     .child(div().px_2().py_2().text_size(px(10.)).text_color(rgb(MUTED)).child(context))
                     .child(div().px_2().py_2().text_size(px(10.)).text_color(rgb(MUTED)).child(cost))
             );
@@ -260,12 +260,9 @@ impl Render for PatchApp {
         };
 
         let transcript_view = if transcript.is_empty() {
-            div().flex_1().flex().flex_col().items_center().justify_center().gap_3()
-                .child(div().text_size(px(32.)).font_weight(gpui::FontWeight::BOLD).child("What are we fixing today?"))
-                .child(
-                    div().max_w(px(520.)).text_center().text_size(px(14.)).text_color(rgb(MUTED))
-                        .child("Open a code workspace, create a chat and select a local Ollama model to get started.")
-                )
+            div().flex_1().flex().flex_col().items_center().justify_center()
+                .child(div().text_size(px(42.)).font_weight(gpui::FontWeight::BLACK)
+                    .text_color(rgb(ACCENT)).child("P A T C H"))
         } else {
             div().w_full().max_w(px(900.)).mx_auto().text_size(px(13.)).child(transcript)
         };
@@ -273,12 +270,12 @@ impl Render for PatchApp {
         let conversation = div().flex_1().w_full().px_8().py_5().flex().flex_col()
             .gap_3().overflow_y_scrollbar().child(transcript_view);
 
-        let composer_box = div().w_full().max_w(px(960.)).mx_auto().p_3().rounded_lg()
+        let composer_box = div().w_full().p_3().rounded_lg()
             .bg(rgb(PANEL)).border_1()
             .border_color(rgb(if build { ACCENT } else { BLUE }))
             .child(Textarea::new(&self.prompt));
 
-        let composer_footer = div().w_full().max_w(px(960.)).mx_auto().flex()
+        let composer_footer = div().w_full().flex()
             .items_center().justify_between()
             .child(
                 div().flex().items_center().gap_2()
@@ -301,7 +298,7 @@ impl Render for PatchApp {
                     )
             );
 
-        let composer = div().w_full().px_6().pb_4().flex().flex_col().gap_2()
+        let composer = div().w_full().px_8().pb_4().flex().flex_col().gap_2()
             .child(composer_box).child(composer_footer);
 
         let main = div().flex_1().h_full().flex().flex_col()
