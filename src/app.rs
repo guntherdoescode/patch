@@ -1,4 +1,4 @@
-use gpui::{Context, IntoElement, PathPromptOptions, Render, Window, div, prelude::*, px, rgb};
+use gpui_kit::gpui::{Context, IntoElement, PathPromptOptions, Render, Window, div, prelude::*, px, rgb};
 use gpui_kit::base::input::{Textarea, TextareaState};
 use std::{path::PathBuf, thread};
 
@@ -14,7 +14,7 @@ pub struct PatchApp {
     active_chat:Option<i64>, chats:Vec<(i64,String)>,
     messages:Vec<crate::providers::ollama::ChatMessage>, transcript:String,
     models:Vec<String>, selected_model:usize, model_menu_open:bool, build_mode:bool,
-    prompt:gpui::Entity<TextareaState>, busy:bool, status:String,
+    prompt:gpui_kit::gpui::Entity<TextareaState>, busy:bool, status:String,
     usage:crate::usage::UsageLedger, pricing:Option<crate::usage::TokenPricing>,
 }
 
@@ -44,7 +44,7 @@ impl PatchApp {
         }
     }
 
-    fn open_workspace(&mut self,_:&gpui::ClickEvent,_:&mut Window,cx:&mut Context<Self>) {
+    fn open_workspace(&mut self,_:&gpui_kit::gpui::ClickEvent,_:&mut Window,cx:&mut Context<Self>) {
         let receiver=cx.prompt_for_paths(PathPromptOptions{files:false,directories:true,multiple:false,prompt:Some("Open workspace".into())});
         cx.spawn(async move|this,cx|{
             if let Ok(Ok(Some(paths)))=receiver.await {
@@ -207,7 +207,7 @@ impl Render for PatchApp {
             .child(
                 div().flex().items_center().gap_2()
                     .child(div().w(px(9.)).h(px(9.)).rounded_sm().bg(rgb(ACCENT)))
-                    .child(div().text_size(px(22.)).font_weight(gpui::FontWeight::BOLD).child("PATCH"))
+                    .child(div().text_size(px(22.)).font_weight(gpui_kit::gpui::FontWeight::BOLD).child("PATCH"))
             )
             .child(
                 div().id("new-chat").w_full().px_3().py_2().rounded_md()
