@@ -15,7 +15,6 @@ pub fn build(application: &adw::Application) {
     let root = gtk::Paned::new(gtk::Orientation::Horizontal);
     root.set_wide_handle(true);
     root.set_position(255);
-    root.set_min_position(220);
     // Keep the chat sidebar within the window and reserve usable space for the editor.
     root.connect_notify_local(Some("position"), |paned, _| {
         let width = paned.width();
@@ -285,8 +284,6 @@ fn build_sidebar(
         dialog.show();
     });
 
-    let history_for_new = history.clone();
-    let parent_for_new = window.clone();
     let active_chat_for_new = active_chat.clone();
     let chat_messages_for_new = chat_messages.clone();
     let transcript_buffer_for_new = transcript_buffer.clone();
