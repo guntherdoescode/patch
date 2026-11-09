@@ -15,9 +15,26 @@ pub fn build(application: &adw::Application) {
     let root = gtk::Paned::new(gtk::Orientation::Horizontal);
     root.set_wide_handle(true);
     root.set_position(255);
+    // Keep the chat sidebar within the window and reserve usable space for the editor.
+    root.connect_notify_local(Some("position"), |paned, _| {
+        let width = paned.width();
+        if width <= 0 { return; }
+        let upper = (width - 520).max(180).min(360);
+        let clamped = paned.position().clamp(180.min(upper), upper);
+        if clamped != paned.position() { paned.set_position(clamped); }
+    });
     let content = gtk::Paned::new(gtk::Orientation::Horizontal);
     content.set_wide_handle(true);
     content.set_position(760);
+    // The explorer may be resized, but never at the expense of the conversation.
+    content.connect_notify_local(Some("position"), |paned, _| {
+        let width = paned.width();
+        if width <= 0 { return; }
+        let lower = 480.min(width);
+        let upper = (width - lower).max(0).min(width * 35 / 100);
+        let clamped = paned.position().clamp(lower.min(upper), upper.max(lower.min(upper)));
+        if clamped != paned.position() { paned.set_position(clamped); }
+    });
 
     let project_name = gtk::Label::new(Some("No project open"));
     project_name.add_css_class("heading");
@@ -38,9 +55,11 @@ pub fn build(application: &adw::Application) {
         transcript_buffer.clone(), transcript_scroll_ref.clone(), welcome_ref.clone(),
         file_list.clone(), active_workspace.clone(), history_ref.clone(),
     );
-    sidebar.set_size_request(210, -1);
+    sidebar.set_size_request(180, -1);
+    sidebar.set_hexpand(false);
     let files_panel = gtk::Box::new(gtk::Orientation::Vertical, 8);
-    files_panel.set_size_request(210, -1);
+    files_panel.set_size_request(180, -1);
+    files_panel.set_hexpand(false);
     files_panel.set_margin_top(8);
     files_panel.set_margin_bottom(8);
     files_panel.set_margin_start(8);
@@ -64,10 +83,10 @@ pub fn build(application: &adw::Application) {
 
     root.set_start_child(Some(&sidebar));
     root.set_end_child(Some(&workspace));
-    root.set_resize_start_child(false);
+    root.set_resize_start_child(true);
     root.set_resize_end_child(true);
     root.set_shrink_start_child(true);
-    root.set_shrink_end_child(false);
+    root.set_shrink_end_child(true);
     window.set_content(Some(&root));
     window.present();
 }
@@ -1008,7 +1027,7 @@ fn build_workspace(
     content_paned.set_end_child(Some(&files_panel));
     content_paned.set_resize_start_child(true);
     content_paned.set_resize_end_child(true);
-    content_paned.set_shrink_start_child(false);
+    content_paned.set_shrink_start_child(true);
     content_paned.set_shrink_end_child(true);
     content_paned.set_position(820);
 
