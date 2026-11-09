@@ -208,7 +208,7 @@ impl Render for PatchApp {
             .child(
                 div().flex().items_center()
                     .child(
-                        img(std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/patch.png")))
+                        img(std::path::Path::new(concat!(env!("OUT_DIR"), "/patch-10x.png")))
                             .w(px(105.)).h(px(20.))
                     )
             )
