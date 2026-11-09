@@ -1,5 +1,6 @@
 use gpui_kit::gpui::{self, Context, IntoElement, PathPromptOptions, Render, Window, div, prelude::*, px, rgb};
 use gpui_kit::base::input::{Textarea, TextareaState};
+use gpui_kit::gpui_component::scroll::ScrollableElement;
 use std::{path::PathBuf, thread};
 
 const BG:u32=0x111315; const SIDEBAR:u32=0x191c1f; const PANEL:u32=0x202428;
