@@ -202,6 +202,13 @@ fn build_sidebar(
         let name_label = name_label.clone();
         let history_list = history_list.clone();
         let workspace_id = workspace_id.clone();
+        let parent_for_response = parent.clone();
+        let active_chat_for_response = active_chat_for_project.clone();
+        let chat_messages_for_response = chat_messages_for_project.clone();
+        let transcript_buffer_for_response = transcript_buffer_for_project.clone();
+        let transcript_scroll_for_response = transcript_scroll_for_project.clone();
+        let welcome_for_response = welcome_for_project.clone();
+        let file_list_for_response = file_list_for_project.clone();
         let chooser = dialog.clone();
 
         dialog.connect_response(move |dialog, response| {
@@ -217,15 +224,15 @@ fn build_sidebar(
             match crate::storage::register_workspace(&path) {
                 Ok(id) => {
                     workspace_id.set(Some(id));
-                    active_chat_for_project.set(None);
-                    chat_messages_for_project.borrow_mut().clear();
-                    if let Some(buffer) = transcript_buffer_for_project.borrow().as_ref() {
+                    active_chat_for_response.set(None);
+                    chat_messages_for_response.borrow_mut().clear();
+                    if let Some(buffer) = transcript_buffer_for_response.borrow().as_ref() {
                         buffer.set_text("");
                     }
-                    if let Some(scroll) = transcript_scroll_for_project.borrow().as_ref() {
+                    if let Some(scroll) = transcript_scroll_for_response.borrow().as_ref() {
                         scroll.set_visible(false);
                     }
-                    if let Some(logo) = welcome_for_project.borrow().as_ref() {
+                    if let Some(logo) = welcome_for_response.borrow().as_ref() {
                         logo.set_visible(true);
                     }
                     name_label.set_text(path.file_name()
@@ -238,9 +245,9 @@ fn build_sidebar(
                         Ok(chats) if !chats.is_empty() => {
                             for (chat_id, title) in chats {
                                 append_chat_row(
-                                    &history_list, &parent, chat_id, &title,
-                                    &workspace_id, &active_chat_for_project, &chat_messages_for_project,
-                                    &transcript_buffer_for_project, &transcript_scroll_for_project, &welcome_for_project,
+                                    &history_list, &parent_for_response, chat_id, &title,
+                                    &workspace_id, &active_chat_for_response, &chat_messages_for_response,
+                                    &transcript_buffer_for_response, &transcript_scroll_for_response, &welcome_for_response,
                                 );
                             }
                         }
@@ -253,7 +260,7 @@ fn build_sidebar(
                         }
                         Err(error) => eprintln!("Could not load chat history: {error}"),
                     }
-                    populate_file_list(&file_list_for_project, &path);
+                    populate_file_list(&file_list_for_response, &path);
                 }
                 Err(error) => eprintln!("Could not register workspace: {error}"),
             }
