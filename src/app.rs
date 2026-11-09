@@ -952,7 +952,7 @@ fn build_workspace(
                 let result = (|| -> Result<crate::providers::ollama::ChatUsage, String> {
                     let root = workspace_root.ok_or_else(|| "No active workspace is open.".to_owned())?;
                     let workspace = crate::mcp::Workspace::open(root).map_err(|e| e.to_string())?;
-                    let definitions = crate::mcp::agent::native_tool_definitions();
+                    let definitions = crate::providers::ollama::format_tools(&crate::mcp::agent::native_tool_definitions());
                     let approval_tx = tx.clone();
                     let mode = if is_build { crate::mcp::ExecutionMode::Build } else { crate::mcp::ExecutionMode::Plan };
                     crate::providers::ollama::OllamaClient::default().chat_with_tools(
