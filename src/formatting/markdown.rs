@@ -18,52 +18,43 @@ pub fn render_conversation(
     let table = buffer.tag_table();
     let mut syntax_tags = HashMap::new();
 
-    let heading = make_tag("patch-md-heading");
+    let heading = make_tag(&table, "patch-md-heading");
     heading.set_weight(700);
     heading.set_scale(1.12);
-    table.add(&heading);
 
-    let bold = make_tag("patch-md-bold");
+    let bold = make_tag(&table, "patch-md-bold");
     bold.set_weight(700);
-    table.add(&bold);
 
-    let italic = make_tag("patch-md-italic");
+    let italic = make_tag(&table, "patch-md-italic");
     italic.set_style(gtk::pango::Style::Italic);
-    table.add(&italic);
 
-    let inline_code = make_tag("patch-md-inline-code");
+    let inline_code = make_tag(&table, "patch-md-inline-code");
     inline_code.set_family(Some("monospace"));
     inline_code.set_foreground(Some("#e6a15a"));
     inline_code.set_background(Some("#292d35"));
-    table.add(&inline_code);
 
-    let code = make_tag("patch-md-code");
+    let code = make_tag(&table, "patch-md-code");
     code.set_family(Some("monospace"));
     code.set_foreground(Some("#d7dae0"));
     code.set_background(Some("#20242b"));
-    table.add(&code);
 
-    let added = make_tag("patch-md-diff-added");
+    let added = make_tag(&table, "patch-md-diff-added");
     added.set_family(Some("monospace"));
     added.set_foreground(Some("#a6e3a1"));
     added.set_background(Some("#203328"));
-    table.add(&added);
 
-    let removed = make_tag("patch-md-diff-removed");
+    let removed = make_tag(&table, "patch-md-diff-removed");
     removed.set_family(Some("monospace"));
     removed.set_foreground(Some("#f38ba8"));
     removed.set_background(Some("#3b252d"));
-    table.add(&removed);
 
-    let hunk = make_tag("patch-md-diff-hunk");
+    let hunk = make_tag(&table, "patch-md-diff-hunk");
     hunk.set_family(Some("monospace"));
     hunk.set_foreground(Some("#89b4fa"));
-    table.add(&hunk);
 
-    let role_tag = make_tag("patch-md-role");
+    let role_tag = make_tag(&table, "patch-md-role");
     role_tag.set_weight(700);
     role_tag.set_foreground(Some("#8ab4f8"));
-    table.add(&role_tag);
 
     for (index, message) in messages.iter().enumerate() {
         let mut end = buffer.end_iter();
@@ -82,8 +73,13 @@ pub fn render_conversation(
     }
 }
 
-fn make_tag(name: &str) -> gtk::TextTag {
-    gtk::TextTag::builder().name(name).build()
+fn make_tag(table: &gtk::TextTagTable, name: &str) -> gtk::TextTag {
+    if let Some(tag) = table.lookup(name) {
+        return tag;
+    }
+    let tag = gtk::TextTag::builder().name(name).build();
+    table.add(&tag);
+    tag
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -155,10 +151,10 @@ fn render_markdown(
                     if let Some(spans) = highlight_code(language, &code_content) {
                         for span in spans {
                             let tag = syntax_tags.entry(span.foreground.clone()).or_insert_with(|| {
-                                let tag = make_tag(&format!("patch-syntax-{}", span.foreground.trim_start_matches('#')));
+                                let tag_name = format!("patch-syntax-{}", span.foreground.trim_start_matches('#'));
+                                let tag = make_tag(table, &tag_name);
                                 tag.set_family(Some("monospace"));
                                 tag.set_foreground(Some(&span.foreground));
-                                table.add(&tag);
                                 tag
                             });
                             insert(buffer, &span.text, &[code, tag]);
