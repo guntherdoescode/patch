@@ -45,3 +45,27 @@ pub fn tool_calls(message: &Value) -> Vec<(String, Value)> {
         _ => Vec::new(),
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_json_content_tool_call() {
+        let message = json!({"message":{"content":r#"{"name":"read_file","arguments":{"path":"MCP.txt"}}"#}});
+        assert_eq!(tool_calls(&message), vec![("read_file".to_owned(), json!({"path":"MCP.txt"}))]);
+    }
+
+    #[test]
+    fn ignores_unknown_json_content_tool() {
+        let message = json!({"message":{"content":r#"{"name":"run_shell","arguments":{"command":"id"}}"#}});
+        assert!(tool_calls(&message).is_empty());
+    }
+
+    #[test]
+    fn parses_native_ollama_tool_call() {
+        let message = json!({"message":{"tool_calls":[{"function":{"name":"read_file","arguments":{"path":"MCP.txt"}}}] }});
+        assert_eq!(tool_calls(&message), vec![("read_file".to_owned(), json!({"path":"MCP.txt"}))]);
+    }
+}
