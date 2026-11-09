@@ -208,7 +208,7 @@ impl Render for PatchApp {
             .child(
                 div().flex().items_center()
                     .child(
-                        img(std::path::Path::new(concat!(env!("OUT_DIR"), "/patch-10x.png")))
+                        img(std::path::Path::new(concat!(env!("OUT_DIR"), "/patch-5x.png")))
                             .w(px(105.)).h(px(20.))
                     )
             )
@@ -264,7 +264,7 @@ impl Render for PatchApp {
         let transcript_view = if transcript.is_empty() {
             div().flex_1().flex().flex_col().items_center().justify_center()
                 .child(
-                    img(std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/patch.png")))
+                    img(std::path::Path::new(concat!(env!("OUT_DIR"), "/patch-10x.png")))
                         .w(px(210.)).h(px(40.))
                 )
         } else {
