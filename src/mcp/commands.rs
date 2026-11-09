@@ -16,7 +16,10 @@ pub enum CommandError {
 pub fn run_read_only(workspace: &Workspace, program: &str, args: &[String]) -> Result<String, CommandError> {
     const ALLOWLIST: &[&str] = &["pwd", "ls", "find", "rg", "grep", "cat", "head", "tail", "wc", "file", "date", "git"];
     if !ALLOWLIST.contains(&program) { return Err(CommandError::NotAllowed); }
-    if program == "date" && args.iter().any(|arg| !matches!(arg.as_str(), "-u" | "--utc" | "--universal") && !arg.starts_with("+")) {\n        return Err(CommandError::NotAllowed);\n    }\n    if program == "git" {
+    if program == "date" && args.iter().any(|arg| !matches!(arg.as_str(), "-u" | "--utc" | "--universal") && !arg.starts_with("+")) {
+        return Err(CommandError::NotAllowed);
+    }
+    if program == "git" {
         let sub = args.first().map(String::as_str).unwrap_or("");
         if !matches!(sub, "status" | "diff" | "log" | "show" | "branch" | "rev-parse" | "ls-files") {
             return Err(CommandError::NotAllowed);
