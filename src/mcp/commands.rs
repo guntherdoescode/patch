@@ -22,8 +22,22 @@ pub fn run_read_only(workspace: &Workspace, program: &str, args: &[String]) -> R
             return Err(CommandError::NotAllowed);
         }
     }
+    // Reject options that turn nominally read-only utilities into execution or
+    // mutation primitives. No shell is ever involved.
+    if program == "find" && args.iter().any(|a| ["-exec", "-execdir", "-delete", "-ok", "-okdir"].contains(&a.as_str())) {
+        return Err(CommandError::NotAllowed);
+    }
+    if program == "sed" && args.iter().any(|a| a == "-i" || a.starts_with("--in-place")) {
+        return Err(CommandError::NotAllowed);
+    }
+    if program == "rg" && args.iter().any(|a| a == "--pre" || a.starts_with("--pre=")) {
+        return Err(CommandError::NotAllowed);
+    }
     let mut command = Command::new(program);
-    command.args(args).current_dir(workspace.root()).stdin(Stdio::null()).stderr(Stdio::piped()).stdout(Stdio::piped());
+    command.args(args).current_dir(workspace.root())
+        .env("GIT_CONFIG_NOSYSTEM", "1").env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_OPTIONAL_LOCKS", "0").env("GIT_PAGER", "cat").env("PAGER", "cat")
+        .stdin(Stdio::null()).stderr(Stdio::piped()).stdout(Stdio::piped());
     let output = command.output()?;
     let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
     if !output.status.success() {
