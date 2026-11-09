@@ -192,3 +192,46 @@ pub fn save_message(
     )?;
     Ok(connection.last_insert_rowid())
 }
+
+
+/// Messages are returned in insertion order so a chat can be restored exactly.
+pub fn list_messages(chat_id: i64) -> Result<Vec<(String, String)>> {
+    let connection = open_database()?;
+    let mut statement = connection.prepare(
+        "SELECT role, content FROM messages WHERE chat_id = ?1 ORDER BY id"
+    )?;
+    let rows = statement.query_map([chat_id], |row| {
+        Ok((row.get(0)?, row.get(1)?))
+    })?;
+    rows.collect()
+}
+
+/// Rename a chat without changing its workspace or message history.
+pub fn rename_chat(chat_id: i64, title: &str) -> Result<()> {
+    let title = title.trim();
+    if title.is_empty() {
+        return Err(rusqlite::Error::InvalidParameterName(
+            "Chat title cannot be empty".to_owned()
+        ));
+    }
+    open_database()?.execute(
+        "UPDATE chats SET title = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2",
+        rusqlite::params![title, chat_id],
+    )?;
+    Ok(())
+}
+
+/// Delete a chat. Its messages are removed through the chats foreign-key cascade.
+pub fn delete_chat(chat_id: i64) -> Result<()> {
+    open_database()?.execute("DELETE FROM chats WHERE id = ?1", [chat_id])?;
+    Ok(())
+}
+
+/// Resolve the canonical workspace path for file browsing.
+pub fn workspace_path(workspace_id: i64) -> Result<PathBuf> {
+    open_database()?.query_row(
+        "SELECT canonical_path FROM workspaces WHERE id = ?1",
+        [workspace_id],
+        |row| row.get(0),
+    )
+}
