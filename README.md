@@ -8,7 +8,7 @@ Patch is being developed as a desktop GUI first. The initial interface is a nati
 
 ## Current status
 
-Early foundation. The repository contains the GTK desktop shell, workspace-scoped SQLite storage, local Ollama discovery, token accounting primitives and an initial permission policy. The full agent loop, streaming, editing and hosted API adapters are not implemented yet.
+The GTK desktop shell now has a native Ollama tool-calling loop and a first set of workspace tools under `src/mcp/`. Plan mode can inspect workspace files and run a constrained read-only command allowlist. Build mode can create, replace and delete files inside the active workspace. Requests for paths outside that workspace trigger an explicit per-operation confirmation dialog. The MCP stdio JSON-RPC client transport is present as a foundation; external MCP server configuration, discovery and tool bridging are not yet exposed in the UI.
 
 ## Design principles
 
@@ -28,7 +28,7 @@ Early foundation. The repository contains the GTK desktop shell, workspace-scope
 | agent | Conversation loop, streaming events and context management |
 | providers | Provider interface, Ollama discovery and remote APIs |
 | permissions | Plan/Build policy and approval decisions |
-| tools | Read-only and mutating tool implementations |
+| mcp | Native tool catalogue, Ollama tool-call loop, workspace tools, command allowlist, permission policy and MCP stdio transport |
 | workspace | Project roots, path validation and external-path consent |
 | diff | Unified diff parsing and review presentation |
 | storage | SQLite chats, messages, settings and migrations |
@@ -47,7 +47,7 @@ Run the permission policy tests with:
 
 ## Security model
 
-The UI is not a security boundary. Every tool call must be checked by a central permission policy immediately before execution. Path access must be canonicalised and checked against the active workspace; external paths require a separate user grant. Plan mode must not expose mutating tool implementations to the agent at all.
+The UI is not a security boundary. Every native filesystem tool call is checked against the active workspace and central Plan/Build policy. Paths are canonicalised before access; symlink targets outside the workspace are treated as external. External paths require an explicit per-operation user grant. Plan mode denies all mutations regardless of approval. Read-only commands are launched without a shell, use an executable allowlist, and validate path operands. This is defence in depth, not an OS-level sandbox: filesystem races and the behaviour of arbitrary external MCP servers still require stronger process isolation before treating Patch as a hardened security boundary.
 
 API keys must never be written to chat history, logs, crash reports or ordinary application settings. The eventual secrets implementation should use the desktop secret service, with a carefully documented fallback if unavailable.
 
