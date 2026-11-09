@@ -12,15 +12,65 @@ pub fn build(application: &adw::Application) {
         .default_height(780)
         .build();
 
-    let root = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    let root = gtk::Paned::new(gtk::Orientation::Horizontal);
+    root.set_wide_handle(true);
+    root.set_position(255);
+    let content = gtk::Paned::new(gtk::Orientation::Horizontal);
+    content.set_wide_handle(true);
+    content.set_position(760);
+
     let project_name = gtk::Label::new(Some("No project open"));
     project_name.add_css_class("heading");
 
     let active_chat = Rc::new(Cell::new(None::<i64>));
-    let sidebar = build_sidebar(&window, &project_name, active_chat.clone());
-    sidebar.set_size_request(250, -1);
-    root.append(&sidebar);
-    root.append(&build_workspace(project_name, active_chat));
+    let chat_messages = Rc::new(RefCell::new(Vec::<crate::providers::ollama::ChatMessage>::new()));
+    let transcript_buffer = Rc::new(RefCell::new(None::<gtk::TextBuffer>));
+    let transcript_scroll_ref = Rc::new(RefCell::new(None::<gtk::ScrolledWindow>));
+    let welcome_ref = Rc::new(RefCell::new(None::<gtk::DrawingArea>));
+    let file_list = gtk::ListBox::new();
+    file_list.add_css_class("navigation-sidebar");
+    file_list.set_selection_mode(gtk::SelectionMode::None);
+
+    let sidebar = build_sidebar(
+        &window, &project_name, active_chat.clone(), chat_messages.clone(),
+        transcript_buffer.clone(), transcript_scroll_ref.clone(), welcome_ref.clone(),
+        file_list.clone(),
+    );
+    sidebar.set_size_request(210, -1);
+    let workspace = build_workspace(
+        project_name, active_chat, chat_messages, transcript_buffer,
+        transcript_scroll_ref, welcome_ref, root.clone(),
+    );
+
+    let files_panel = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    files_panel.set_size_request(180, -1);
+    files_panel.set_margin_top(12);
+    files_panel.set_margin_bottom(12);
+    files_panel.set_margin_start(10);
+    files_panel.set_margin_end(10);
+    let files_title = gtk::Label::new(Some("PROJECT FILES"));
+    files_title.add_css_class("caption-heading");
+    files_title.add_css_class("dim-label");
+    files_title.set_halign(gtk::Align::Start);
+    let files_scroll = gtk::ScrolledWindow::new();
+    files_scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+    files_scroll.set_child(Some(&file_list));
+    files_scroll.set_vexpand(true);
+    files_panel.append(&files_title);
+    files_panel.append(&files_scroll);
+
+    content.set_start_child(Some(&workspace));
+    content.set_end_child(Some(&files_panel));
+    content.set_resize_start_child(true);
+    content.set_resize_end_child(false);
+    content.set_shrink_start_child(false);
+    content.set_shrink_end_child(true);
+    root.set_start_child(Some(&sidebar));
+    root.set_end_child(Some(&content));
+    root.set_resize_start_child(false);
+    root.set_resize_end_child(true);
+    root.set_shrink_start_child(true);
+    root.set_shrink_end_child(false);
     window.set_content(Some(&root));
     window.present();
 }
@@ -78,6 +128,11 @@ fn build_sidebar(
     window: &adw::ApplicationWindow,
     project_name: &gtk::Label,
     active_chat: Rc<Cell<Option<i64>>>,
+    chat_messages: Rc<RefCell<Vec<crate::providers::ollama::ChatMessage>>>,
+    transcript_buffer: Rc<RefCell<Option<gtk::TextBuffer>>>,
+    transcript_scroll_ref: Rc<RefCell<Option<gtk::ScrolledWindow>>>,
+    welcome_ref: Rc<RefCell<Option<gtk::DrawingArea>>>,
+    file_list: gtk::ListBox,
 ) -> gtk::Box {
     let sidebar = gtk::Box::new(gtk::Orientation::Vertical, 12);
     sidebar.set_margin_top(16);
@@ -164,14 +219,12 @@ fn build_sidebar(
                     }
                     match crate::storage::list_chat_titles(id) {
                         Ok(chats) if !chats.is_empty() => {
-                            for (_, title) in chats {
-                                let label = gtk::Label::new(Some(&title));
-                                label.set_halign(gtk::Align::Start);
-                                label.set_margin_top(8);
-                                label.set_margin_bottom(8);
-                                label.set_margin_start(8);
-                                label.set_margin_end(8);
-                                history_list.append(&label);
+                            for (chat_id, title) in chats {
+                                append_chat_row(
+                                    &history_list, &parent, chat_id, &title,
+                                    &workspace_id, &active_chat, &chat_messages,
+                                    &transcript_buffer, &transcript_scroll_ref, &welcome_ref,
+                                );
                             }
                         }
                         Ok(_) => {
@@ -183,6 +236,7 @@ fn build_sidebar(
                         }
                         Err(error) => eprintln!("Could not load chat history: {error}"),
                     }
+                    populate_file_list(&file_list, &path);
                 }
                 Err(error) => eprintln!("Could not register workspace: {error}"),
             }
@@ -191,21 +245,35 @@ fn build_sidebar(
     });
 
     let history_for_new = history.clone();
+    let parent_for_new = window.clone();
     let active_chat_for_new = active_chat.clone();
+    let chat_messages_for_new = chat_messages.clone();
+    let transcript_buffer_for_new = transcript_buffer.clone();
+    let transcript_scroll_for_new = transcript_scroll_ref.clone();
+    let welcome_for_new = welcome_ref.clone();
+    let workspace_for_new = active_workspace.clone();
     new_chat.connect_clicked(move |_| {
-        let Some(id) = active_workspace.get() else {
+        let Some(workspace_id) = workspace_for_new.get() else {
             return;
         };
-        match crate::storage::create_chat(id) {
-            Ok(id) => {
-                active_chat_for_new.set(Some(id));
-                let label = gtk::Label::new(Some("New chat"));
-                label.set_halign(gtk::Align::Start);
-                label.set_margin_top(8);
-                label.set_margin_bottom(8);
-                label.set_margin_start(8);
-                label.set_margin_end(8);
-                history_for_new.append(&label);
+        match crate::storage::create_chat(workspace_id) {
+            Ok(chat_id) => {
+                active_chat_for_new.set(Some(chat_id));
+                chat_messages_for_new.borrow_mut().clear();
+                if let Some(buffer) = transcript_buffer_for_new.borrow().as_ref() {
+                    buffer.set_text("");
+                }
+                if let Some(scroll) = transcript_scroll_for_new.borrow().as_ref() {
+                    scroll.set_visible(true);
+                }
+                if let Some(welcome) = welcome_for_new.borrow().as_ref() {
+                    welcome.set_visible(false);
+                }
+                append_chat_row(
+                    &history_for_new, &parent_for_new, chat_id, "New chat",
+                    &workspace_for_new, &active_chat_for_new, &chat_messages_for_new,
+                    &transcript_buffer_for_new, &transcript_scroll_for_new, &welcome_for_new,
+                );
             }
             Err(error) => eprintln!("Could not create chat: {error}"),
         }
@@ -220,7 +288,214 @@ fn build_sidebar(
     sidebar
 }
 
-fn build_workspace(project_name: gtk::Label, active_chat: Rc<Cell<Option<i64>>>) -> gtk::Box {
+
+/// Add a selectable chat row with rename and delete actions.
+fn append_chat_row(
+    history: &gtk::ListBox,
+    parent: &adw::ApplicationWindow,
+    chat_id: i64,
+    title: &str,
+    workspace_id: &Rc<Cell<Option<i64>>>,
+    active_chat: &Rc<Cell<Option<i64>>>,
+    chat_messages: &Rc<RefCell<Vec<crate::providers::ollama::ChatMessage>>>,
+    transcript_buffer: &Rc<RefCell<Option<gtk::TextBuffer>>>,
+    transcript_scroll: &Rc<RefCell<Option<gtk::ScrolledWindow>>>,
+    welcome: &Rc<RefCell<Option<gtk::DrawingArea>>>,
+) {
+    let row = gtk::ListBoxRow::new();
+    let line = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+    line.set_margin_top(4);
+    line.set_margin_bottom(4);
+    line.set_margin_start(4);
+    line.set_margin_end(4);
+
+    let select = gtk::Button::with_label(title);
+    select.set_hexpand(true);
+    select.set_halign(gtk::Align::Fill);
+    select.add_css_class("flat");
+    let active_chat = active_chat.clone();
+    let chat_messages = chat_messages.clone();
+    let transcript_buffer = transcript_buffer.clone();
+    let transcript_scroll = transcript_scroll.clone();
+    let welcome = welcome.clone();
+    select.connect_clicked(move |_| {
+        match crate::storage::list_messages(chat_id) {
+            Ok(messages) => {
+                active_chat.set(Some(chat_id));
+                let mut restored = Vec::with_capacity(messages.len());
+                let mut rendered = String::new();
+                for (role, content) in messages {
+                    let label = if role == "user" { "You" } else { "Patch" };
+                    rendered.push_str(label);
+                    rendered.push('\n');
+                    rendered.push_str(&content);
+                    rendered.push_str("\n\n");
+                    restored.push(crate::providers::ollama::ChatMessage { role, content });
+                }
+                *chat_messages.borrow_mut() = restored;
+                if let Some(buffer) = transcript_buffer.borrow().as_ref() {
+                    buffer.set_text(&rendered);
+                }
+                if let Some(scroll) = transcript_scroll.borrow().as_ref() {
+                    scroll.set_visible(true);
+                }
+                if let Some(logo) = welcome.borrow().as_ref() {
+                    logo.set_visible(false);
+                }
+            }
+            Err(error) => eprintln!("Could not restore chat: {error}"),
+        }
+    });
+
+    let rename = gtk::Button::with_label("✎");
+    rename.add_css_class("flat");
+    rename.set_tooltip_text(Some("Rename chat"));
+    let parent_for_rename = parent.clone();
+    let select_for_rename = select.clone();
+    rename.connect_clicked(move |_| {
+        let dialog = gtk::Dialog::with_buttons(
+            Some("Rename chat"),
+            Some(&parent_for_rename),
+            gtk::DialogFlags::MODAL,
+            &[("Cancel", gtk::ResponseType::Cancel), ("Rename", gtk::ResponseType::Accept)],
+        );
+        let entry = gtk::Entry::new();
+        entry.set_text(title);
+        entry.set_activates_default(true);
+        dialog.set_default_response(gtk::ResponseType::Accept);
+        dialog.content_area().append(&entry);
+        let entry_for_response = entry.clone();
+        let select_for_response = select_for_rename.clone();
+        dialog.connect_response(move |dialog, response| {
+            if response == gtk::ResponseType::Accept {
+                let new_title = entry_for_response.text().trim().to_owned();
+                if !new_title.is_empty() {
+                    match crate::storage::rename_chat(chat_id, &new_title) {
+                        Ok(()) => select_for_response.set_label(&new_title),
+                        Err(error) => eprintln!("Could not rename chat: {error}"),
+                    }
+                }
+            }
+            dialog.close();
+        });
+        dialog.show();
+    });
+
+    let delete = gtk::Button::with_label("×");
+    delete.add_css_class("flat");
+    delete.add_css_class("destructive-action");
+    delete.set_tooltip_text(Some("Delete chat"));
+    let parent_for_delete = parent.clone();
+    let history_for_delete = history.clone();
+    let active_chat_for_delete = active_chat.clone();
+    let chat_messages_for_delete = chat_messages.clone();
+    let transcript_buffer_for_delete = transcript_buffer.clone();
+    let transcript_scroll_for_delete = transcript_scroll.clone();
+    let welcome_for_delete = welcome.clone();
+    delete.connect_clicked(move |_| {
+        let dialog = gtk::MessageDialog::new(
+            Some(&parent_for_delete),
+            gtk::DialogFlags::MODAL,
+            gtk::MessageType::Warning,
+            gtk::ButtonsType::Cancel,
+            "Delete this chat and its message history?",
+        );
+        dialog.add_button("Delete", gtk::ResponseType::Accept);
+        let history = history_for_delete.clone();
+        let active_chat = active_chat_for_delete.clone();
+        let chat_messages = chat_messages_for_delete.clone();
+        let transcript_buffer = transcript_buffer_for_delete.clone();
+        let transcript_scroll = transcript_scroll_for_delete.clone();
+        let welcome = welcome_for_delete.clone();
+        dialog.connect_response(move |dialog, response| {
+            if response == gtk::ResponseType::Accept {
+                match crate::storage::delete_chat(chat_id) {
+                    Ok(()) => {
+                        if active_chat.get() == Some(chat_id) {
+                            active_chat.set(None);
+                            chat_messages.borrow_mut().clear();
+                            if let Some(buffer) = transcript_buffer.borrow().as_ref() {
+                                buffer.set_text("");
+                            }
+                            if let Some(scroll) = transcript_scroll.borrow().as_ref() {
+                                scroll.set_visible(false);
+                            }
+                            if let Some(logo) = welcome.borrow().as_ref() {
+                                logo.set_visible(true);
+                            }
+                        }
+                        if let Some(row) = history.row_at_index(
+                            (0..history.observe_children().n_items())
+                                .find(|index| history.row_at_index(*index as i32)
+                                    .map(|candidate| candidate == row).unwrap_or(false))
+                                .unwrap_or(0) as i32
+                        ) {
+                            history.remove(&row);
+                        }
+                    }
+                    Err(error) => eprintln!("Could not delete chat: {error}"),
+                }
+            }
+            dialog.close();
+        });
+        dialog.show();
+    });
+
+    line.append(&select);
+    line.append(&rename);
+    line.append(&delete);
+    row.set_child(Some(&line));
+    history.append(&row);
+}
+
+/// Populate a compact, depth-limited project tree. Directories are listed
+/// before files and common build/VCS directories are omitted.
+fn populate_file_list(list: &gtk::ListBox, root: &std::path::Path) {
+    while let Some(child) = list.first_child() {
+        list.remove(&child);
+    }
+    fn walk(list: &gtk::ListBox, dir: &std::path::Path, depth: usize, root: &std::path::Path) {
+        if depth > 4 { return; }
+        let Ok(entries) = std::fs::read_dir(dir) else { return; };
+        let mut entries: Vec<_> = entries.filter_map(Result::ok).collect();
+        entries.sort_by_key(|entry| {
+            let is_dir = entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false);
+            (!is_dir, entry.file_name())
+        });
+        for entry in entries {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if matches!(name.as_str(), ".git" | "target" | "node_modules" | ".patch") {
+                continue;
+            }
+            let path = entry.path();
+            let is_dir = entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false);
+            let relative = path.strip_prefix(root).unwrap_or(&path);
+            let label = gtk::Label::new(Some(&format!(
+                "{}{} {}",
+                "  ".repeat(depth),
+                if is_dir { "▸" } else { "·" },
+                relative.file_name().unwrap_or_default().to_string_lossy()
+            )));
+            label.set_halign(gtk::Align::Start);
+            label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+            label.set_margin_top(2);
+            label.set_margin_bottom(2);
+            list.append(&label);
+            if is_dir { walk(list, &path, depth + 1, root); }
+        }
+    }
+    walk(list, root, 0, root);
+}
+
+fn build_workspace(
+    project_name: gtk::Label,
+    active_chat: Rc<Cell<Option<i64>>>,
+    chat_messages: Rc<RefCell<Vec<crate::providers::ollama::ChatMessage>>>,
+    transcript_buffer_ref: Rc<RefCell<Option<gtk::TextBuffer>>>,
+    transcript_scroll_ref: Rc<RefCell<Option<gtk::ScrolledWindow>>>,
+    welcome_ref: Rc<RefCell<Option<gtk::DrawingArea>>>,
+    root_paned: gtk::Paned,
+) -> gtk::Box {
     let workspace = gtk::Box::new(gtk::Orientation::Vertical, 0);
     workspace.set_hexpand(true);
     workspace.set_vexpand(true);
@@ -228,10 +503,34 @@ fn build_workspace(project_name: gtk::Label, active_chat: Rc<Cell<Option<i64>>>)
     let header = gtk::HeaderBar::new();
     header.set_title_widget(Some(&project_name));
 
+    let sidebar_toggle = gtk::Button::from_icon_name("sidebar-show-symbolic");
+    sidebar_toggle.set_tooltip_text(Some("Show or hide chat sidebar"));
+    let root_for_toggle = root_paned.clone();
+    sidebar_toggle.connect_clicked(move |_| {
+        if let Some(sidebar) = root_for_toggle.start_child() {
+            sidebar.set_visible(!sidebar.is_visible());
+        }
+    });
+    header.pack_start(&sidebar_toggle);
+
     let model = gtk::ComboBoxText::new();
     model.append_text("Discovering local models…");
     model.set_active(Some(0));
     header.pack_start(&model);
+
+    let files_toggle = gtk::Button::from_icon_name("view-list-symbolic");
+    files_toggle.set_tooltip_text(Some("Show or hide project files"));
+    // The file browser is the end child of the workspace's parent Paned.
+    let content_for_toggle = root_paned.end_child().and_downcast::<gtk::Paned>();
+    if let Some(content_for_toggle) = content_for_toggle {
+        let content_for_click = content_for_toggle.clone();
+        files_toggle.connect_clicked(move |_| {
+            if let Some(files) = content_for_click.end_child() {
+                files.set_visible(!files.is_visible());
+            }
+        });
+    }
+    header.pack_start(&files_toggle);
 
     let usage = UsageGauge::new();
     header.pack_end(&usage.widget);
@@ -272,14 +571,17 @@ fn build_workspace(project_name: gtk::Label, active_chat: Rc<Cell<Option<i64>>>)
     });
 
     let conversation = gtk::Box::new(gtk::Orientation::Vertical, 14);
-    conversation.set_valign(gtk::Align::Center);
-    conversation.set_halign(gtk::Align::Center);
+    // A centred GtkBox can shrink to its children's natural size when the
+    // transcript becomes visible. Fill the available workspace instead.
+    conversation.set_valign(gtk::Align::Fill);
+    conversation.set_halign(gtk::Align::Fill);
     conversation.set_hexpand(true);
     conversation.set_vexpand(true);
 
     let welcome = patch_logo(210, 40);
     welcome.set_halign(gtk::Align::Center);
     conversation.append(&welcome);
+    *welcome_ref.borrow_mut() = Some(welcome.clone());
 
     let transcript_scroll = gtk::ScrolledWindow::new();
     transcript_scroll.set_hexpand(true);
@@ -294,10 +596,12 @@ fn build_workspace(project_name: gtk::Label, active_chat: Rc<Cell<Option<i64>>>)
     transcript.set_top_margin(18);
     transcript.set_bottom_margin(18);
     transcript_scroll.set_child(Some(&transcript));
+    transcript_scroll.set_hexpand(true);
+    transcript_scroll.set_vexpand(true);
     transcript_scroll.set_visible(false);
+    *transcript_buffer_ref.borrow_mut() = Some(transcript.buffer());
+    *transcript_scroll_ref.borrow_mut() = Some(transcript_scroll.clone());
     conversation.append(&transcript_scroll);
-    let chat_messages = Rc::new(RefCell::new(Vec::<crate::providers::ollama::ChatMessage>::new()));
-
     // The composer owns the mode selector: there is no longer a separate
     // Plan/Build control in the header.
     if let Some(display) = gtk::gdk::Display::default() {
