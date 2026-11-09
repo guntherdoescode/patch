@@ -531,7 +531,7 @@ fn populate_file_list(list: &gtk::ListBox, root: &std::path::Path, parent: &adw:
 
 fn open_file_preview(parent: &adw::ApplicationWindow, path: &std::path::Path) {
     let dialog = gtk::Dialog::with_buttons(
-        Some(&path.file_name().unwrap_or_default().to_string_lossy()),
+        Some(path.file_name().and_then(|name| name.to_str()).unwrap_or("File preview")),
         Some(parent),
         gtk::DialogFlags::MODAL,
         &[("Close", gtk::ResponseType::Close)],
@@ -643,7 +643,7 @@ fn build_workspace(
 
     let welcome = patch_logo(210, 40);
     welcome.set_halign(gtk::Align::Center);
-    welcome.set_valign(gtk::Align::Center);
+    welcome.set_valign(gtk::Align::Fill);
     welcome.set_vexpand(true);
     conversation.append(&welcome);
     *welcome_ref.borrow_mut() = Some(welcome.clone());
