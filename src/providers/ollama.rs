@@ -182,20 +182,16 @@ impl OllamaClient {
             }
             let message = value.get("message").cloned()
                 .ok_or_else(|| ChatError::InvalidResponse("missing message".into()))?;
-            let calls = message.get("tool_calls").and_then(Value::as_array).cloned().unwrap_or_default();
-            if calls.is_empty() {
+            let parsed_calls = crate::mcp::agent::tool_calls(&serde_json::json!({"message": message}));
+            if parsed_calls.is_empty() {
                 if let Some(content) = message.get("content").and_then(Value::as_str) {
                     if !content.is_empty() { on_chunk(content.to_owned()); }
                 }
                 return Ok(usage);
             }
             conversation.push(message);
-            for call in calls {
-                let function = call.get("function").ok_or_else(|| ChatError::InvalidResponse("malformed tool call".into()))?;
-                let name = function.get("name").and_then(Value::as_str)
-                    .ok_or_else(|| ChatError::InvalidResponse("tool call has no name".into()))?;
-                let arguments = function.get("arguments").cloned().unwrap_or_else(|| serde_json::json!({}));
-                let result = execute(name, arguments).unwrap_or_else(|error| format!("Tool error: {error}"));
+            for (name, arguments) in parsed_calls {
+                let result = execute(&name, arguments).unwrap_or_else(|error| format!("Tool error: {error}"));
                 conversation.push(serde_json::json!({"role":"tool","content":result}));
             }
         }
