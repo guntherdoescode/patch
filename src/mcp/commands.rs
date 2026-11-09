@@ -14,9 +14,9 @@ pub enum CommandError {
 /// Deliberately shell-free. Arguments are passed directly to an executable;
 /// pipes, redirects, substitutions and shell built-ins are never interpreted.
 pub fn run_read_only(workspace: &Workspace, program: &str, args: &[String]) -> Result<String, CommandError> {
-    const ALLOWLIST: &[&str] = &["pwd", "ls", "find", "rg", "grep", "cat", "head", "tail", "wc", "file", "git"];
+    const ALLOWLIST: &[&str] = &["pwd", "ls", "find", "rg", "grep", "cat", "head", "tail", "wc", "file", "date", "git"];
     if !ALLOWLIST.contains(&program) { return Err(CommandError::NotAllowed); }
-    if program == "git" {
+    if program == "date" && args.iter().any(|arg| !matches!(arg.as_str(), "-u" | "--utc" | "--universal") && !arg.starts_with("+")) {\n        return Err(CommandError::NotAllowed);\n    }\n    if program == "git" {
         let sub = args.first().map(String::as_str).unwrap_or("");
         if !matches!(sub, "status" | "diff" | "log" | "show" | "branch" | "rev-parse" | "ls-files") {
             return Err(CommandError::NotAllowed);
@@ -47,7 +47,7 @@ pub fn run_read_only(workspace: &Workspace, program: &str, args: &[String]) -> R
     // Validate path operands separately from search expressions/options so
     // read-only commands cannot be used to read arbitrary host files.
     let path_operands: Vec<&str> = match program {
-        "pwd" => {
+        "date" => Vec::new(),\n        "pwd" => {
             if !args.is_empty() { return Err(CommandError::NotAllowed); }
             Vec::new()
         }
