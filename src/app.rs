@@ -39,7 +39,7 @@ pub fn build(application: &adw::Application) {
     sidebar.set_size_request(210, -1);
     let workspace = build_workspace(
         project_name, active_chat, chat_messages, transcript_buffer,
-        transcript_scroll_ref, welcome_ref, root.clone(),
+        transcript_scroll_ref, welcome_ref, root.clone(), content.clone(),
     );
 
     let files_panel = gtk::Box::new(gtk::Orientation::Vertical, 8);
@@ -177,6 +177,7 @@ fn build_sidebar(
     let name_label = project_name.clone();
     let history_list = history.clone();
     let workspace_id = active_workspace.clone();
+    let active_chat_for_project = active_chat.clone();
     let chat_messages_for_project = chat_messages.clone();
     let transcript_buffer_for_project = transcript_buffer.clone();
     let transcript_scroll_for_project = transcript_scroll_ref.clone();
@@ -227,7 +228,7 @@ fn build_sidebar(
                             for (chat_id, title) in chats {
                                 append_chat_row(
                                     &history_list, &parent, chat_id, &title,
-                                    &workspace_id, &active_chat, &chat_messages_for_project,
+                                    &workspace_id, &active_chat_for_project, &chat_messages_for_project,
                                     &transcript_buffer_for_project, &transcript_scroll_for_project, &welcome_for_project,
                                 );
                             }
@@ -496,6 +497,7 @@ fn build_workspace(
     transcript_scroll_ref: Rc<RefCell<Option<gtk::ScrolledWindow>>>,
     welcome_ref: Rc<RefCell<Option<gtk::DrawingArea>>>,
     root_paned: gtk::Paned,
+    content_paned: gtk::Paned,
 ) -> gtk::Box {
     let workspace = gtk::Box::new(gtk::Orientation::Vertical, 0);
     workspace.set_hexpand(true);
@@ -522,15 +524,12 @@ fn build_workspace(
     let files_toggle = gtk::Button::from_icon_name("view-list-symbolic");
     files_toggle.set_tooltip_text(Some("Show or hide project files"));
     // The file browser is the end child of the workspace's parent Paned.
-    let content_for_toggle = root_paned.end_child().and_downcast::<gtk::Paned>();
-    if let Some(content_for_toggle) = content_for_toggle {
-        let content_for_click = content_for_toggle.clone();
-        files_toggle.connect_clicked(move |_| {
-            if let Some(files) = content_for_click.end_child() {
-                files.set_visible(!files.is_visible());
-            }
-        });
-    }
+    let content_for_click = content_paned.clone();
+    files_toggle.connect_clicked(move |_| {
+        if let Some(files) = content_for_click.end_child() {
+            files.set_visible(!files.is_visible());
+        }
+    });
     header.pack_start(&files_toggle);
 
     let usage = UsageGauge::new();
