@@ -23,6 +23,8 @@ pub fn build(application: &adw::Application) {
     project_name.add_css_class("heading");
 
     let active_chat = Rc::new(Cell::new(None::<i64>));
+    let active_workspace = Rc::new(Cell::new(None::<i64>));
+    let history_ref = Rc::new(RefCell::new(None::<gtk::ListBox>));
     let chat_messages = Rc::new(RefCell::new(Vec::<crate::providers::ollama::ChatMessage>::new()));
     let transcript_buffer = Rc::new(RefCell::new(None::<gtk::TextBuffer>));
     let transcript_scroll_ref = Rc::new(RefCell::new(None::<gtk::ScrolledWindow>));
@@ -34,7 +36,7 @@ pub fn build(application: &adw::Application) {
     let sidebar = build_sidebar(
         &window, &project_name, active_chat.clone(), chat_messages.clone(),
         transcript_buffer.clone(), transcript_scroll_ref.clone(), welcome_ref.clone(),
-        file_list.clone(),
+        file_list.clone(), active_workspace.clone(), history_ref.clone(),
     );
     sidebar.set_size_request(210, -1);
     let files_panel = gtk::Box::new(gtk::Orientation::Vertical, 8);
@@ -57,6 +59,7 @@ pub fn build(application: &adw::Application) {
     let workspace = build_workspace(
         project_name, active_chat, chat_messages, transcript_buffer,
         transcript_scroll_ref, welcome_ref, root.clone(), content.clone(), files_panel.clone(),
+        active_workspace.clone(), history_ref.clone(), window.clone(),
     );
 
     root.set_start_child(Some(&sidebar));
@@ -127,6 +130,8 @@ fn build_sidebar(
     transcript_scroll_ref: Rc<RefCell<Option<gtk::ScrolledWindow>>>,
     welcome_ref: Rc<RefCell<Option<gtk::DrawingArea>>>,
     file_list: gtk::ListBox,
+    active_workspace: Rc<Cell<Option<i64>>>,
+    history_ref: Rc<RefCell<Option<gtk::ListBox>>>,
 ) -> gtk::Box {
     let sidebar = gtk::Box::new(gtk::Orientation::Vertical, 12);
     sidebar.set_margin_top(16);
@@ -166,7 +171,7 @@ fn build_sidebar(
     empty.set_margin_end(8);
     history.append(&empty);
 
-    let active_workspace = Rc::new(Cell::new(None::<i64>));
+    *history_ref.borrow_mut() = Some(history.clone());
     let parent = window.clone();
     let name_label = project_name.clone();
     let history_list = history.clone();
@@ -271,34 +276,20 @@ fn build_sidebar(
     let welcome_for_new = welcome_ref.clone();
     let workspace_for_new = active_workspace.clone();
     new_chat.connect_clicked(move |_| {
-        // An empty draft remains the active chat until its first message is sent.
-        // This avoids accumulating empty "New chat" entries in the history.
-        if active_chat_for_new.get().is_some() && chat_messages_for_new.borrow().is_empty() {
+        // New chat is a draft only; persistence begins with the first prompt.
+        if workspace_for_new.get().is_none() {
             return;
         }
-        let Some(workspace_id) = workspace_for_new.get() else {
-            return;
-        };
-        match crate::storage::create_chat(workspace_id) {
-            Ok(chat_id) => {
-                active_chat_for_new.set(Some(chat_id));
-                chat_messages_for_new.borrow_mut().clear();
-                if let Some(buffer) = transcript_buffer_for_new.borrow().as_ref() {
-                    buffer.set_text("");
-                }
-                if let Some(scroll) = transcript_scroll_for_new.borrow().as_ref() {
-                    scroll.set_visible(true);
-                }
-                if let Some(welcome) = welcome_for_new.borrow().as_ref() {
-                    welcome.set_visible(false);
-                }
-                append_chat_row(
-                    &history_for_new, &parent_for_new, chat_id, "New chat",
-                    &workspace_for_new, &active_chat_for_new, &chat_messages_for_new,
-                    &transcript_buffer_for_new, &transcript_scroll_for_new, &welcome_for_new,
-                );
-            }
-            Err(error) => eprintln!("Could not create chat: {error}"),
+        active_chat_for_new.set(None);
+        chat_messages_for_new.borrow_mut().clear();
+        if let Some(buffer) = transcript_buffer_for_new.borrow().as_ref() {
+            buffer.set_text("");
+        }
+        if let Some(scroll) = transcript_scroll_for_new.borrow().as_ref() {
+            scroll.set_visible(false);
+        }
+        if let Some(welcome) = welcome_for_new.borrow().as_ref() {
+            welcome.set_visible(true);
         }
     });
 
@@ -572,6 +563,9 @@ fn build_workspace(
     root_paned: gtk::Paned,
     content_paned: gtk::Paned,
     files_panel: gtk::Box,
+    active_workspace: Rc<Cell<Option<i64>>>,
+    history_ref: Rc<RefCell<Option<gtk::ListBox>>>,
+    parent_window: adw::ApplicationWindow,
 ) -> gtk::Box {
     let workspace = gtk::Box::new(gtk::Orientation::Vertical, 0);
     workspace.set_hexpand(true);
@@ -822,6 +816,12 @@ fn build_workspace(
         let prompt_buffer = prompt_buffer.clone();
         let model = model.clone();
         let active_chat = active_chat.clone();
+        let active_workspace_for_send = active_workspace.clone();
+        let history_for_send = history_ref.clone();
+        let parent_for_send = parent_window.clone();
+        let transcript_buffer_ref_for_send = transcript_buffer_ref.clone();
+        let transcript_scroll_ref_for_send = transcript_scroll_ref.clone();
+        let welcome_ref_for_send = welcome_ref.clone();
         let transcript = transcript.clone();
         let transcript_scroll = transcript_scroll.clone();
         let welcome = welcome.clone();
@@ -842,13 +842,32 @@ fn build_workspace(
             if prompt_text.is_empty() {
                 return;
             }
-            let Some(chat_id) = active_chat.get() else {
-                transcript_scroll.set_visible(true);
-                welcome.set_visible(false);
-                let buffer = transcript.buffer();
-                buffer.set_text("Open a project and create a chat before sending a prompt.\n");
-                transcript_scroll.queue_draw();
-                return;
+            let chat_id = match active_chat.get() {
+                Some(id) => id,
+                None => {
+                    let Some(workspace_id) = active_workspace_for_send.get() else {
+                        return;
+                    };
+                    match crate::storage::create_chat(workspace_id) {
+                        Ok(id) => {
+                            active_chat.set(Some(id));
+                            if let Some(history) = history_for_send.borrow().as_ref() {
+                                append_chat_row(
+                                    history, &parent_for_send, id, "New chat",
+                                    &active_workspace_for_send, &active_chat, &chat_messages,
+                                    &transcript_buffer_ref_for_send,
+                                    &transcript_scroll_ref_for_send,
+                                    &welcome_ref_for_send,
+                                );
+                            }
+                            id
+                        }
+                        Err(error) => {
+                            eprintln!("Could not create chat: {error}");
+                            return;
+                        }
+                    }
+                }
             };
             let Some(model_name) = model.active_text().map(|value| value.to_string()) else {
                 return;
