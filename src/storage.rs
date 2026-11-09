@@ -99,7 +99,7 @@ pub fn register_workspace(path: &std::path::Path) -> Result<i64> {
     connection.query_row(
         "SELECT id FROM workspaces WHERE canonical_path = ?1",
         [canonical.to_string_lossy().as_ref()],
-        |row| row.get::<_, String>(0).map(PathBuf::from),
+        |row| row.get(0),
     )
 }
 
@@ -232,6 +232,6 @@ pub fn workspace_path(workspace_id: i64) -> Result<PathBuf> {
     open_database()?.query_row(
         "SELECT canonical_path FROM workspaces WHERE id = ?1",
         [workspace_id],
-        |row| row.get(0),
+        |row| row.get::<_, String>(0).map(PathBuf::from),
     )
 }
