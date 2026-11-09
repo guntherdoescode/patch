@@ -2,6 +2,13 @@ use adw::prelude::*;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
+#[derive(Debug)]
+enum StreamEvent {
+    Chunk(String),
+    Finished(Result<crate::providers::ollama::ChatUsage, String>),
+    ApprovalRequest { path: String, reply: std::sync::mpsc::SyncSender<bool> },
+}
+
 pub fn build(application: &adw::Application) {
     adw::StyleManager::default().set_color_scheme(adw::ColorScheme::Default);
 
@@ -785,12 +792,6 @@ fn build_workspace(
     send.set_sensitive(false);
     send.set_tooltip_text(Some("Send prompt to the selected local Ollama model"));
 
-    #[derive(Debug)]
-    enum StreamEvent {
-        Chunk(String),
-        Finished(Result<crate::providers::ollama::ChatUsage, String>),
-    }
-
     let busy = Rc::new(Cell::new(false));
     {
         let send = send.clone();
@@ -952,18 +953,46 @@ fn build_workspace(
                     let root = workspace_root.ok_or_else(|| "No active workspace is open.".to_owned())?;
                     let workspace = crate::mcp::Workspace::open(root).map_err(|e| e.to_string())?;
                     let definitions = crate::mcp::agent::native_tool_definitions();
+                    let approval_tx = tx.clone();
+                    let mode = if is_build { crate::mcp::ExecutionMode::Build } else { crate::mcp::ExecutionMode::Plan };
                     crate::providers::ollama::OllamaClient::default().chat_with_tools(
                         &model_name,
                         &request_messages,
                         &definitions,
                         |name, args| {
                             let string_arg = |key: &str| args.get(key).and_then(serde_json::Value::as_str).unwrap_or("").to_owned();
+                            let path_access = |path: &str, operation: crate::mcp::Operation| -> Result<bool, String> {
+                                use crate::mcp::{AccessDecision, policy::authorise};
+                                let decision = authorise(&workspace, mode, operation, Some(std::path::Path::new(path)), false);
+                                match decision {
+                                    AccessDecision::Allow => Ok(false),
+                                    AccessDecision::Deny => Err("Denied by Plan/Build permission policy.".to_owned()),
+                                    AccessDecision::NeedsExternalApproval => {
+                                        let (reply_tx, reply_rx) = std::sync::mpsc::sync_channel(1);
+                                        approval_tx.send(StreamEvent::ApprovalRequest { path: path.to_owned(), reply: reply_tx })
+                                            .map_err(|e| e.to_string())?;
+                                        let granted = reply_rx.recv_timeout(std::time::Duration::from_secs(120)).unwrap_or(false);
+                                        if !granted { return Err("External access was not approved.".to_owned()); }
+                                        match authorise(&workspace, mode, operation, Some(std::path::Path::new(path)), true) {
+                                            AccessDecision::Allow => Ok(true),
+                                            _ => Err("External access was denied by policy.".to_owned()),
+                                        }
+                                    }
+                                }
+                            };
                             match name {
                                 "get_current_directory" => Ok(crate::mcp::tools::current_directory(&workspace)),
-                                "list_directory" => crate::mcp::tools::list_directory(&workspace, &string_arg("path"))
-                                    .map(|items| items.join("\\n")).map_err(|e| e.to_string()),
-                                "read_file" => crate::mcp::tools::read_file(&workspace, &string_arg("path"))
-                                    .map_err(|e| e.to_string()),
+                                "list_directory" => {
+                                    let path = string_arg("path");
+                                    let external = path_access(&path, crate::mcp::Operation::Read)?;
+                                    crate::mcp::tools::list_directory(&workspace, &path, external)
+                                        .map(|items| items.join("\\n")).map_err(|e| e.to_string())
+                                }
+                                "read_file" => {
+                                    let path = string_arg("path");
+                                    let external = path_access(&path, crate::mcp::Operation::Read)?;
+                                    crate::mcp::tools::read_file(&workspace, &path, external).map_err(|e| e.to_string())
+                                }
                                 "search_files" => crate::mcp::tools::search_files(&workspace, &string_arg("query"))
                                     .map(|items| items.join("\\n")).map_err(|e| e.to_string()),
                                 "run_read_only" => {
@@ -971,14 +1000,21 @@ fn build_workspace(
                                     let args = args.get("args").and_then(serde_json::Value::as_array)
                                         .map(|values| values.iter().filter_map(serde_json::Value::as_str).map(str::to_owned).collect::<Vec<_>>())
                                         .unwrap_or_default();
-                                    crate::mcp::commands::run_read_only(&workspace, &program, &args)
-                                        .map_err(|e| e.to_string())
+                                    crate::mcp::commands::run_read_only(&workspace, &program, &args).map_err(|e| e.to_string())
                                 }
-                                "write_file" if is_build => crate::mcp::tools::write_file(&workspace, &string_arg("path"), &string_arg("contents"))
-                                    .map(|_| "File written successfully.".to_owned()).map_err(|e| e.to_string()),
-                                "delete_file" if is_build => crate::mcp::tools::delete_file(&workspace, &string_arg("path"))
-                                    .map(|_| "File deleted successfully.".to_owned()).map_err(|e| e.to_string()),
-                                "write_file" | "delete_file" => Err("Denied: file mutations are unavailable in Plan mode.".to_owned()),
+                                "write_file" => {
+                                    let path = string_arg("path");
+                                    let external = path_access(&path, crate::mcp::Operation::Write)?;
+                                    let contents = string_arg("contents");
+                                    crate::mcp::tools::write_file(&workspace, &path, &contents, external)
+                                        .map(|_| "File written successfully.".to_owned()).map_err(|e| e.to_string())
+                                }
+                                "delete_file" => {
+                                    let path = string_arg("path");
+                                    let external = path_access(&path, crate::mcp::Operation::Delete)?;
+                                    crate::mcp::tools::delete_file(&workspace, &path, external)
+                                        .map(|_| "File deleted successfully.".to_owned()).map_err(|e| e.to_string())
+                                }
                                 _ => Err(format!("Unknown tool: {name}")),
                             }
                         },
@@ -996,6 +1032,7 @@ fn build_workspace(
             let prompt_buffer = prompt_buffer.clone();
             let usage_widget = usage_widget.clone();
             let usage_ledger = usage_ledger.clone();
+            let approval_parent = parent_window.clone();
             let mut assistant_text = String::new();
             gtk::glib::timeout_add_local(std::time::Duration::from_millis(25), move || {
                 loop {
@@ -1004,6 +1041,21 @@ fn build_workspace(
                             assistant_text.push_str(&chunk);
                             let mut end = transcript_buffer.end_iter();
                             transcript_buffer.insert(&mut end, &chunk);
+                        }
+                        Ok(StreamEvent::ApprovalRequest { path, reply }) => {
+                            let dialog = gtk::MessageDialog::builder()
+                                .transient_for(&approval_parent)
+                                .modal(true)
+                                .buttons(gtk::ButtonsType::YesNo)
+                                .text("Allow Patch to access a file outside this workspace?")
+                                .secondary_text(&format!("Requested path:\\n{path}\\n\\nOnly this operation will be authorised."))
+                                .build();
+                            dialog.connect_response(move |dialog, response| {
+                                let _ = reply.send(response == gtk::ResponseType::Yes);
+                                dialog.close();
+                            });
+                            dialog.show();
+                            return gtk::glib::ControlFlow::Continue;
                         }
                         Ok(StreamEvent::Finished(Ok(stats))) => {
                             let mut end = transcript_buffer.end_iter();
