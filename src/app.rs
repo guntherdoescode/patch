@@ -217,6 +217,17 @@ fn build_sidebar(
             match crate::storage::register_workspace(&path) {
                 Ok(id) => {
                     workspace_id.set(Some(id));
+                    active_chat_for_project.set(None);
+                    chat_messages_for_project.borrow_mut().clear();
+                    if let Some(buffer) = transcript_buffer_for_project.borrow().as_ref() {
+                        buffer.set_text("");
+                    }
+                    if let Some(scroll) = transcript_scroll_for_project.borrow().as_ref() {
+                        scroll.set_visible(false);
+                    }
+                    if let Some(logo) = welcome_for_project.borrow().as_ref() {
+                        logo.set_visible(true);
+                    }
                     name_label.set_text(path.file_name()
                         .and_then(|name| name.to_str())
                         .unwrap_or("Workspace"));
