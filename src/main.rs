@@ -12,8 +12,8 @@ fn main() {
     }
 
     gpui_platform::application().run(|cx: &mut App| {
-        cx.open_window(WindowOptions::default(), |_window, cx| {
-            cx.new(|_cx| app::PatchApp::default())
+        cx.open_window(WindowOptions::default(), |window, cx| {
+            cx.new(|cx| app::PatchApp::new(window, cx))
         })
         .expect("failed to open Patch window");
         cx.activate(true);
