@@ -4,7 +4,7 @@ mod providers;
 mod storage;
 mod usage;
 
-use gpui::{App, WindowOptions};
+use gpui::{App, AppContext, WindowOptions};
 
 fn main() {
     if let Err(error) = storage::open_database() {
