@@ -6,8 +6,6 @@ description = "A native Rust coding agent with explicit execution permissions"
 license = "MIT"
 
 [dependencies]
-gpui = { package = "gpui-ce", version = "0.3" }
-gpui_platform = { package = "gpui_ce_platform", version = "0.3" }
 gpui_kit = { package = "gpui_ce_kit", version = "0.3" }
 async-channel = "2"
 futures = "0.3"
