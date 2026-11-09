@@ -726,7 +726,7 @@ fn build_workspace(
         prompt_buffer.connect_changed(move |buffer| {
             let text = buffer.text(&buffer.start_iter(), &buffer.end_iter(), false);
             placeholder.set_visible(text.is_empty());
-            let lines = text.lines().count().max(1).min(10);
+            let lines = text.split('\n').count().max(1).min(10);
             prompt.set_size_request(-1, (lines as i32 * 22).max(42));
         });
     }
@@ -858,9 +858,6 @@ fn build_workspace(
                             }
                             active_chat.set(Some(id));
                             if let Some(history) = history_for_send.borrow().as_ref() {
-                                while let Some(child) = history.first_child() {
-                                    history.remove(&child);
-                                }
                                 append_chat_row(
                                     history, &parent_for_send, id, &title,
                                     &active_workspace_for_send, &active_chat, &chat_messages,
