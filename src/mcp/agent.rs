@@ -48,7 +48,20 @@ pub fn tool_calls(message: &Value, allowed_tools: &[String]) -> Vec<(String, Val
     let Some(content) = message.pointer("/message/content").and_then(Value::as_str) else {
         return Vec::new();
     };
-    let Ok(value) = serde_json::from_str::<Value>(content.trim()) else {
+    // Some instruction-following models wrap a tool envelope in a Markdown
+    // JSON fence. Accept it only when the entire assistant message is that one
+    // fenced object; never scrape examples out of explanatory prose.
+    let trimmed = content.trim();
+    let payload = if let Some(inner) = trimmed.strip_prefix("```json")
+        .and_then(|rest| rest.strip_suffix("```")) {
+        inner.trim()
+    } else if let Some(inner) = trimmed.strip_prefix("```JSON")
+        .and_then(|rest| rest.strip_suffix("```")) {
+        inner.trim()
+    } else {
+        trimmed
+    };
+    let Ok(value) = serde_json::from_str::<Value>(payload) else {
         return Vec::new();
     };
     let name = value.get("name").and_then(Value::as_str);
@@ -103,5 +116,20 @@ mod dynamic_tool_tests {
     fn rejects_tools_not_in_the_active_catalogue() {
         let message = json!({"message":{"tool_calls":[{"function":{"name":"unlisted_tool","arguments":{}}}]}});
         assert!(tool_calls(&message, &["read_file".to_owned()]).is_empty());
+    } 
+    #[test]
+    fn parses_standalone_markdown_fenced_tool_call() {
+        let message = json!({"message":{"content":"```json\n{\"name\":\"read_file\",\"arguments\":{\"path\":\"Cargo.toml\"}}\n```"}});
+        assert_eq!(
+            tool_calls(&message, &["read_file".to_owned()]),
+            vec![("read_file".to_owned(), json!({"path":"Cargo.toml"}))]
+        );
     }
+
+    #[test]
+    fn does_not_execute_json_examples_inside_prose() {
+        let message = json!({"message":{"content":"Here is an example:\n```json\n{\"name\":\"read_file\",\"arguments\":{\"path\":\"Cargo.toml\"}}\n```\nUse it if needed."}});
+        assert!(tool_calls(&message, &["read_file".to_owned()]).is_empty());
+    }
+
 }
