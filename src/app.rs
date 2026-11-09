@@ -15,20 +15,8 @@ pub fn build(application: &adw::Application) {
     let root = gtk::Paned::new(gtk::Orientation::Horizontal);
     root.set_wide_handle(true);
     root.set_position(255);
-    // Keep the chat sidebar within the window and reserve usable space for the editor.
-    let clamp_root_position = |paned: &gtk::Paned| {
-        let width = paned.width();
-        if width <= 0 { return; }
-        let upper = (width - 520).max(220).min(360);
-        let clamped = paned.position().clamp(220.min(upper), upper);
-        if clamped != paned.position() { paned.set_position(clamped); }
-    };
-    root.connect_notify_local(Some("position"), {
-        let clamp = clamp_root_position.clone();
-        move |paned, _| clamp(paned)
-    });
-    // Re-clamp after GTK reallocates the Paned when project contents change.
-    root.connect_notify_local(Some("width"), move |paned, _| clamp_root_position(paned));
+    // Let GtkPaned manage its divider from the children's minimum sizes.
+    // A notify::position handler here fights pointer dragging and can lock the handle.
     let content = gtk::Paned::new(gtk::Orientation::Horizontal);
     content.set_wide_handle(true);
     content.set_position(760);
@@ -349,10 +337,18 @@ fn append_chat_row(
     line.set_margin_start(4);
     line.set_margin_end(4);
 
-    let select = gtk::Button::with_label(title);
+    let select = gtk::Button::new();
     select.set_hexpand(true);
     select.set_halign(gtk::Align::Fill);
+    select.set_hexpand(true);
     select.add_css_class("flat");
+    let title_label = gtk::Label::new(Some(title));
+    title_label.set_halign(gtk::Align::Start);
+    title_label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+    title_label.set_max_width_chars(22);
+    title_label.set_hexpand(true);
+    title_label.set_width_chars(1);
+    select.set_child(Some(&title_label));
     let active_chat_for_select = active_chat.clone();
     let chat_messages_for_select = chat_messages.clone();
     let transcript_buffer_for_select = transcript_buffer.clone();
@@ -391,7 +387,7 @@ fn append_chat_row(
     rename.add_css_class("flat");
     rename.set_tooltip_text(Some("Rename chat"));
     let parent_for_rename = parent.clone();
-    let select_for_rename = select.clone();
+    let title_label_for_rename = title_label.clone();
     rename.connect_clicked(move |_| {
         let dialog = gtk::Dialog::with_buttons(
             Some("Rename chat"),
@@ -405,13 +401,13 @@ fn append_chat_row(
         dialog.set_default_response(gtk::ResponseType::Accept);
         dialog.content_area().append(&entry);
         let entry_for_response = entry.clone();
-        let select_for_response = select_for_rename.clone();
+        let title_label_for_response = title_label_for_rename.clone();
         dialog.connect_response(move |dialog, response| {
             if response == gtk::ResponseType::Accept {
                 let new_title = entry_for_response.text().trim().to_owned();
                 if !new_title.is_empty() {
                     match crate::storage::rename_chat(chat_id, &new_title) {
-                        Ok(()) => select_for_response.set_label(&new_title),
+                        Ok(()) => title_label_for_response.set_text(&new_title),
                         Err(error) => eprintln!("Could not rename chat: {error}"),
                     }
                 }
