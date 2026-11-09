@@ -49,6 +49,23 @@ impl Workspace {
         Ok(resolved)
     }
 
+    /// Resolve a path after an explicit external-access grant. Canonicalisation
+    /// still occurs before the caller touches the target.
+    pub fn resolve_with_external(&self, input: impl AsRef<Path>, allow_external: bool) -> Result<PathBuf, WorkspaceError> {
+        let input = input.as_ref();
+        if !allow_external { return self.resolve(input); }
+        let candidate = if input.is_absolute() { input.to_path_buf() } else { self.root.join(input) };
+        match std::fs::canonicalize(&candidate) {
+            Ok(path) => Ok(path),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                let parent = candidate.parent().ok_or(WorkspaceError::OutsideWorkspace)?;
+                let name = candidate.file_name().ok_or(WorkspaceError::OutsideWorkspace)?;
+                Ok(std::fs::canonicalize(parent)?.join(name))
+            }
+            Err(error) => Err(WorkspaceError::Io(error)),
+        }
+    }
+
     pub fn contains(&self, path: impl AsRef<Path>) -> bool {
         self.resolve(path).is_ok()
     }
