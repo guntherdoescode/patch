@@ -383,7 +383,7 @@ fn append_chat_row(
                 }
                 *chat_messages_for_select.borrow_mut() = restored.clone();
                 if let Some(buffer) = transcript_buffer_for_select.borrow().as_ref() {
-                    crate::markdown::render_conversation(buffer, &restored);
+                    crate::formatting::render_conversation(buffer, &restored);
                 }
                 if let Some(scroll) = transcript_scroll_for_select.borrow().as_ref() {
                     scroll.set_visible(true);
@@ -1070,7 +1070,7 @@ fn build_workspace(
                                 role: "assistant".to_owned(),
                                 content: assistant_text.clone(),
                             });
-                            crate::markdown::render_conversation(
+                            crate::formatting::render_conversation(
                                 &transcript_buffer,
                                 &chat_messages.borrow(),
                             );
