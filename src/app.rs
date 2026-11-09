@@ -163,66 +163,150 @@ impl PatchApp {
 }
 
 impl Render for PatchApp {
-    fn render(&mut self,_:&mut Window,cx:&mut Context<Self>)->impl IntoElement {
-        let mode=if self.build_mode{"BUILD"}else{"PLAN"};
-        let mode_colour=if self.build_mode{ACCENT}else{BLUE};
-        let model=self.models.get(self.selected_model).cloned().unwrap_or_else(||"Ollama unavailable".into());
-        let counts=self.usage.counts();
-        let context=counts.context_fraction().map(|v|format!("CTX {:.0}%",v*100.)).unwrap_or_else(||"CTX —".into());
-        let cost=match self.usage.cost(self.pricing){crate::usage::CostDisplay::Known(v)=>format!("USD {:.4}",v),crate::usage::CostDisplay::Unknown=>"Cost —".into()};
-        let transcript=self.transcript.clone();let chats=self.chats.clone();let models=self.models.clone();
-        let menu=self.model_menu_open;let active=self.active_chat;let workspace=self.workspace_name.clone();
-        let status=self.status.clone();let busy=self.busy;let build=self.build_mode;
-        div().size_full().flex().bg(rgb(BG)).text_color(rgb(TEXT))
-        .child(
-            div().w(px(248.)).h_full().flex().flex_col().gap_4().p_4().bg(rgb(SIDEBAR)).border_r_1().border_color(rgb(BORDER))
-            .child(div().flex().items_center().gap_2().child(div().w(px(9.)).h(px(9.)).rounded_sm().bg(rgb(ACCENT))).child(div().text_size(px(22.)).font_weight(gpui::FontWeight::BOLD).child("PATCH")))
-            .child(div().id("new-chat").w_full().px_3().py_2().rounded_md().bg(rgb(ACCENT)).text_color(rgb(0xffffff)).cursor_pointer().child("+   New chat").on_click(cx.listener(Self::create_chat)))
-            .child(div().flex().flex_col().gap_2()
-                .child(div().text_size(px(10.)).font_weight(gpui::FontWeight::BOLD).text_color(rgb(MUTED)).child("WORKSPACE"))
-                .child(div().id("open-workspace").w_full().px_3().py_3().rounded_md().bg(rgb(PANEL)).border_1().border_color(rgb(BORDER)).cursor_pointer().child(format!("▣  {workspace}")).on_click(cx.listener(Self::open_workspace)))
-                .child(if let Some(path)=&self.workspace_path{div().text_size(px(10.)).text_color(rgb(MUTED)).child(path.display().to_string())}else{div().text_size(px(10.)).text_color(rgb(MUTED)).child("Choose a folder to begin")}))
-            .child(div().flex().flex_col().gap_2().flex_1()
-                .child(div().text_size(px(10.)).font_weight(gpui::FontWeight::BOLD).text_color(rgb(MUTED)).child("CHATS"))
-                .child(if chats.is_empty(){div().text_size(px(12.)).text_color(rgb(MUTED)).child("Chats for this workspace will appear here.")}else{
-                    div().flex().flex_col().gap_1().children(chats.iter().map(|(id,title)|{
-                        let id=*id;let selected=active==Some(id);
-                        div().id(("chat-row",id)).w_full().px_2().py_2().rounded_md().bg(rgb(if selected{PANEL}else{SIDEBAR}))
-                            .text_size(px(12.)).cursor_pointer().child(title.clone())
-                            .on_click(cx.listener(move|this,_,_,cx|this.select_chat(id,cx)))
-                    }))
-                }))
-            .child(div().flex_1()).child(div().text_size(px(11.)).text_color(rgb(MUTED)).child("PATCH  ·  GPUI"))
-        )
-        .child(
-            div().flex_1().h_full().flex().flex_col()
-            .child(div().h(px(58.)).w_full().px_6().flex().items_center().justify_between().border_b_1().border_color(rgb(BORDER))
-                .child(div().text_size(px(13.)).child(workspace.clone()))
-                .child(div().flex().items_center().gap_2()
-                    .child(div().id("model-selector").px_3().py_2().rounded_md().bg(rgb(PANEL)).border_1().border_color(rgb(BORDER)).text_size(px(11.)).cursor_pointer().child(format!("{model}  ▾")).on_click(cx.listener(Self::toggle_models)))
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let mode = if self.build_mode { "BUILD" } else { "PLAN" };
+        let mode_colour = if self.build_mode { ACCENT } else { BLUE };
+        let model = self.models.get(self.selected_model).cloned().unwrap_or_else(|| "Ollama unavailable".into());
+        let counts = self.usage.counts();
+        let context = counts.context_fraction().map(|v| format!("CTX {:.0}%", v * 100.0)).unwrap_or_else(|| "CTX —".into());
+        let cost = match self.usage.cost(self.pricing) {
+            crate::usage::CostDisplay::Known(v) => format!("USD {:.4}", v),
+            crate::usage::CostDisplay::Unknown => "Cost —".into(),
+        };
+        let transcript = self.transcript.clone();
+        let chats = self.chats.clone();
+        let models = self.models.clone();
+        let menu = self.model_menu_open;
+        let active = self.active_chat;
+        let workspace = self.workspace_name.clone();
+        let status = self.status.clone();
+        let busy = self.busy;
+        let build = self.build_mode;
+
+        let workspace_hint = if let Some(path) = &self.workspace_path {
+            div().text_size(px(10.)).text_color(rgb(MUTED)).child(path.display().to_string())
+        } else {
+            div().text_size(px(10.)).text_color(rgb(MUTED)).child("Choose a folder to begin")
+        };
+
+        let chat_list = if chats.is_empty() {
+            div().text_size(px(12.)).text_color(rgb(MUTED)).child("Chats for this workspace will appear here.")
+        } else {
+            div().flex().flex_col().gap_1().children(chats.iter().map(|(id, title)| {
+                let id = *id;
+                let selected = active == Some(id);
+                div().id(("chat-row", id)).w_full().px_2().py_2().rounded_md()
+                    .bg(rgb(if selected { PANEL } else { SIDEBAR }))
+                    .text_size(px(12.)).cursor_pointer().child(title.clone())
+                    .on_click(cx.listener(move |this, _, _, cx| this.select_chat(id, cx)))
+            }))
+        };
+
+        let sidebar = div().w(px(248.)).h_full().flex().flex_col().gap_4().p_4()
+            .bg(rgb(SIDEBAR)).border_r_1().border_color(rgb(BORDER))
+            .child(
+                div().flex().items_center().gap_2()
+                    .child(div().w(px(9.)).h(px(9.)).rounded_sm().bg(rgb(ACCENT)))
+                    .child(div().text_size(px(22.)).font_weight(gpui::FontWeight::BOLD).child("PATCH"))
+            )
+            .child(
+                div().id("new-chat").w_full().px_3().py_2().rounded_md()
+                    .bg(rgb(ACCENT)).text_color(rgb(0xffffff)).cursor_pointer()
+                    .child("+   New chat").on_click(cx.listener(Self::create_chat))
+            )
+            .child(
+                div().flex().flex_col().gap_2()
+                    .child(div().text_size(px(10.)).font_weight(gpui::FontWeight::BOLD).text_color(rgb(MUTED)).child("WORKSPACE"))
+                    .child(
+                        div().id("open-workspace").w_full().px_3().py_3().rounded_md()
+                            .bg(rgb(PANEL)).border_1().border_color(rgb(BORDER)).cursor_pointer()
+                            .child(format!("▣  {workspace}")).on_click(cx.listener(Self::open_workspace))
+                    )
+                    .child(workspace_hint)
+            )
+            .child(
+                div().flex().flex_col().gap_2().flex_1()
+                    .child(div().text_size(px(10.)).font_weight(gpui::FontWeight::BOLD).text_color(rgb(MUTED)).child("CHATS"))
+                    .child(chat_list)
+            )
+            .child(div().flex_1())
+            .child(div().text_size(px(11.)).text_color(rgb(MUTED)).child("PATCH  ·  GPUI"));
+
+        let header = div().h(px(58.)).w_full().px_6().flex().items_center().justify_between()
+            .border_b_1().border_color(rgb(BORDER))
+            .child(div().text_size(px(13.)).child(workspace.clone()))
+            .child(
+                div().flex().items_center().gap_2()
+                    .child(
+                        div().id("model-selector").px_3().py_2().rounded_md().bg(rgb(PANEL))
+                            .border_1().border_color(rgb(BORDER)).text_size(px(11.)).cursor_pointer()
+                            .child(format!("{model}  ▾")).on_click(cx.listener(Self::toggle_models))
+                    )
                     .child(div().px_2().py_2().text_size(px(10.)).text_color(rgb(MUTED)).child(context))
-                    .child(div().px_2().py_2().text_size(px(10.)).text_color(rgb(MUTED)).child(cost))))
-            .child(if menu{
-                div().w_full().px_6().py_2().bg(rgb(SIDEBAR)).flex().flex_col().gap_1().children(models.iter().enumerate().map(|(index,name)|{
-                    div().id(("model-choice",index)).px_3().py_2().rounded_md().bg(rgb(if index==self.selected_model{PANEL}else{SIDEBAR}))
-                        .text_size(px(12.)).cursor_pointer().child(name.clone()).on_click(cx.listener(move|this,_,_,cx|this.choose_model(index,cx)))
+                    .child(div().px_2().py_2().text_size(px(10.)).text_color(rgb(MUTED)).child(cost))
+            );
+
+        let model_menu = if menu {
+            div().w_full().px_6().py_2().bg(rgb(SIDEBAR)).flex().flex_col().gap_1()
+                .children(models.iter().enumerate().map(|(index, name)| {
+                    div().id(("model-choice", index)).px_3().py_2().rounded_md()
+                        .bg(rgb(if index == self.selected_model { PANEL } else { SIDEBAR }))
+                        .text_size(px(12.)).cursor_pointer().child(name.clone())
+                        .on_click(cx.listener(move |this, _, _, cx| this.choose_model(index, cx)))
                 }))
-            }else{div().h(px(0.))})
-            .child(div().flex_1().w_full().px_8().py_5().flex().flex_col().gap_3().overflow_y_scroll()
-                .child(if transcript.is_empty(){
-                    div().flex_1().flex().flex_col().items_center().justify_center().gap_3()
-                        .child(div().text_size(px(32.)).font_weight(gpui::FontWeight::BOLD).child("What are we fixing today?"))
-                        .child(div().max_w(px(520.)).text_center().text_size(px(14.)).text_color(rgb(MUTED)).child("Open a code workspace, create a chat and select a local Ollama model to get started."))
-                }else{div().w_full().max_w(px(900.)).mx_auto().text_size(px(13.)).child(transcript)}))
-            .child(div().w_full().px_6().pb_4().flex().flex_col().gap_2()
-                .child(div().w_full().max_w(px(960.)).mx_auto().p_3().rounded_lg().bg(rgb(PANEL)).border_1().border_color(rgb(if build{ACCENT}else{BLUE})).child(Textarea::new(&self.prompt)))
-                .child(div().w_full().max_w(px(960.)).mx_auto().flex().items_center().justify_between()
-                    .child(div().flex().items_center().gap_2()
-                        .child(div().id("mode-toggle").px_3().py_2().rounded_md().bg(rgb(mode_colour)).text_color(rgb(0xffffff)).text_size(px(11.)).cursor_pointer().child(mode).on_click(cx.listener(Self::toggle_mode)))
-                        .child(div().text_size(px(10.)).text_color(rgb(MUTED)).child("Tab to switch modes")))
-                    .child(div().flex().items_center().gap_3()
-                        .child(div().text_size(px(10.)).text_color(rgb(MUTED)).child(status))
-                        .child(div().id("send-prompt").px_4().py_2().rounded_md().bg(rgb(if busy{BORDER}else{ACCENT})).text_color(rgb(0xffffff)).text_size(px(12.)).cursor_pointer().child(if busy{"Working…"}else{"Send  ↗"}).on_click(cx.listener(Self::send_prompt))))))
-        ))
+        } else {
+            div().h(px(0.))
+        };
+
+        let transcript_view = if transcript.is_empty() {
+            div().flex_1().flex().flex_col().items_center().justify_center().gap_3()
+                .child(div().text_size(px(32.)).font_weight(gpui::FontWeight::BOLD).child("What are we fixing today?"))
+                .child(
+                    div().max_w(px(520.)).text_center().text_size(px(14.)).text_color(rgb(MUTED))
+                        .child("Open a code workspace, create a chat and select a local Ollama model to get started.")
+                )
+        } else {
+            div().w_full().max_w(px(900.)).mx_auto().text_size(px(13.)).child(transcript)
+        };
+
+        let conversation = div().flex_1().w_full().px_8().py_5().flex().flex_col()
+            .gap_3().overflow_y_scroll().child(transcript_view);
+
+        let composer_box = div().w_full().max_w(px(960.)).mx_auto().p_3().rounded_lg()
+            .bg(rgb(PANEL)).border_1()
+            .border_color(rgb(if build { ACCENT } else { BLUE }))
+            .child(Textarea::new(&self.prompt));
+
+        let composer_footer = div().w_full().max_w(px(960.)).mx_auto().flex()
+            .items_center().justify_between()
+            .child(
+                div().flex().items_center().gap_2()
+                    .child(
+                        div().id("mode-toggle").px_3().py_2().rounded_md().bg(rgb(mode_colour))
+                            .text_color(rgb(0xffffff)).text_size(px(11.)).cursor_pointer()
+                            .child(mode).on_click(cx.listener(Self::toggle_mode))
+                    )
+                    .child(div().text_size(px(10.)).text_color(rgb(MUTED)).child("Tab to switch modes"))
+            )
+            .child(
+                div().flex().items_center().gap_3()
+                    .child(div().text_size(px(10.)).text_color(rgb(MUTED)).child(status))
+                    .child(
+                        div().id("send-prompt").px_4().py_2().rounded_md()
+                            .bg(rgb(if busy { BORDER } else { ACCENT }))
+                            .text_color(rgb(0xffffff)).text_size(px(12.)).cursor_pointer()
+                            .child(if busy { "Working…" } else { "Send  ↗" })
+                            .on_click(cx.listener(Self::send_prompt))
+                    )
+            );
+
+        let composer = div().w_full().px_6().pb_4().flex().flex_col().gap_2()
+            .child(composer_box).child(composer_footer);
+
+        let main = div().flex_1().h_full().flex().flex_col()
+            .child(header).child(model_menu).child(conversation).child(composer);
+
+        div().size_full().flex().bg(rgb(BG)).text_color(rgb(TEXT))
+            .child(sidebar).child(main)
     }
 }
