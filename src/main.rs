@@ -1,4 +1,5 @@
 mod app;
+mod markdown;
 mod permissions;
 mod providers;
 mod storage;
