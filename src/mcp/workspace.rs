@@ -34,15 +34,7 @@ impl Workspace {
             return Err(WorkspaceError::OutsideWorkspace);
         }
         let candidate = if input.is_absolute() { input.to_path_buf() } else { self.root.join(input) };
-        let resolved = match std::fs::canonicalize(&candidate) {
-            Ok(path) => path,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                let parent = candidate.parent().ok_or(WorkspaceError::OutsideWorkspace)?;
-                let name = candidate.file_name().ok_or(WorkspaceError::OutsideWorkspace)?;
-                std::fs::canonicalize(parent)?.join(name)
-            }
-            Err(error) => return Err(WorkspaceError::Io(error)),
-        };
+        let resolved = canonicalize_allow_missing(&candidate)?;
         if !resolved.starts_with(&self.root) {
             return Err(WorkspaceError::OutsideWorkspace);
         }
@@ -55,15 +47,7 @@ impl Workspace {
         let input = input.as_ref();
         if !allow_external { return self.resolve(input); }
         let candidate = if input.is_absolute() { input.to_path_buf() } else { self.root.join(input) };
-        match std::fs::canonicalize(&candidate) {
-            Ok(path) => Ok(path),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                let parent = candidate.parent().ok_or(WorkspaceError::OutsideWorkspace)?;
-                let name = candidate.file_name().ok_or(WorkspaceError::OutsideWorkspace)?;
-                Ok(std::fs::canonicalize(parent)?.join(name))
-            }
-            Err(error) => Err(WorkspaceError::Io(error)),
-        }
+        canonicalize_allow_missing(&candidate)
     }
 
     pub fn contains(&self, path: impl AsRef<Path>) -> bool {
@@ -79,5 +63,24 @@ mod tests {
         let root = std::env::current_dir().unwrap();
         let ws = Workspace::open(root).unwrap();
         assert!(matches!(ws.resolve("../outside"), Err(WorkspaceError::OutsideWorkspace)));
+    }
+}
+
+fn canonicalize_allow_missing(candidate: &Path) -> Result<PathBuf, WorkspaceError> {
+    let mut ancestor = candidate;
+    let mut suffix = Vec::new();
+    loop {
+        match std::fs::canonicalize(ancestor) {
+            Ok(mut resolved) => {
+                for component in suffix.iter().rev() { resolved.push(component); }
+                return Ok(resolved);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                let name = ancestor.file_name().ok_or(WorkspaceError::OutsideWorkspace)?;
+                suffix.push(name.to_os_string());
+                ancestor = ancestor.parent().ok_or(WorkspaceError::OutsideWorkspace)?;
+            }
+            Err(error) => return Err(WorkspaceError::Io(error)),
+        }
     }
 }
