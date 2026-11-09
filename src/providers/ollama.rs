@@ -80,6 +80,14 @@ pub fn format_tools(definitions: &[crate::mcp::agent::ToolDefinition]) -> Value 
     })).collect())
 }
 
+/// Enable concise tool-flow diagnostics with PATCH_TRACE_TOOLS=1.
+/// Arguments and tool output are deliberately never logged.
+fn tool_trace_enabled() -> bool {
+    std::env::var("PATCH_TRACE_TOOLS")
+        .map(|value| matches!(value.as_str(), "1" | "true" | "yes"))
+        .unwrap_or(false)
+}
+
 impl OllamaClient {
     pub fn new(base_url: impl Into<String>) -> Self {
         Self {
@@ -171,8 +179,22 @@ impl OllamaClient {
             "role": message.role, "content": message.content
         })).collect::<Vec<_>>();
         let mut usage = ChatUsage::default();
+        let trace_tools = tool_trace_enabled();
+        let allowed_tools = tools.as_array().into_iter().flatten()
+            .filter_map(|tool| tool.pointer("/function/name").and_then(Value::as_str))
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        if trace_tools {
+            eprintln!(
+                "[patch:tools] request model={model:?} advertised={} names={allowed_tools:?}",
+                allowed_tools.len()
+            );
+        }
 
-        for _ in 0..8 {
+        for round in 1..=8 {
+            if trace_tools {
+                eprintln!("[patch:tools] round={round} sending request");
+            }
             let response = self.http
                 .post(format!("{}/api/chat", self.base_url))
                 .json(&serde_json::json!({
@@ -196,18 +218,33 @@ impl OllamaClient {
             }
             let message = value.get("message").cloned()
                 .ok_or_else(|| ChatError::InvalidResponse("missing message".into()))?;
-            // Only accept calls for tools advertised in this request. The MCP
-            // catalogue can contain arbitrary server-defined names; the provider
-            // adapter must not maintain its own hard-coded tool-name whitelist.
-            let allowed_tools = tools.as_array().into_iter().flatten()
-                .filter_map(|tool| tool.pointer("/function/name").and_then(Value::as_str))
-                .map(str::to_owned)
+            let native_calls = message.get("tool_calls").and_then(Value::as_array);
+            let native_call_count = native_calls.map_or(0, Vec::len);
+            let native_names = native_calls.into_iter().flatten()
+                .filter_map(|call| call.pointer("/function/name").and_then(Value::as_str))
                 .collect::<Vec<_>>();
+            let content_bytes = message.get("content").and_then(Value::as_str).map_or(0, str::len);
             let parsed_calls = crate::mcp::agent::tool_calls(
                 &serde_json::json!({"message": message}),
                 &allowed_tools,
             );
+            if trace_tools {
+                eprintln!(
+                    "[patch:tools] round={round} response native_calls={native_call_count} native_names={native_names:?} content_bytes={content_bytes} parsed_calls={}",
+                    parsed_calls.len()
+                );
+                if !native_names.is_empty() && parsed_calls.is_empty() {
+                    eprintln!(
+                        "[patch:tools] round={round} diagnosis=provider_returned_unrecognised_or_unadvertised_tool_call"
+                    );
+                }
+            }
             if parsed_calls.is_empty() {
+                if trace_tools {
+                    eprintln!(
+                        "[patch:tools] round={round} diagnosis=no_usable_tool_call; returning_assistant_text"
+                    );
+                }
                 if let Some(content) = message.get("content").and_then(Value::as_str) {
                     if !content.is_empty() { on_chunk(content.to_owned()); }
                 }
@@ -237,8 +274,28 @@ impl OllamaClient {
             conversation.push(assistant_message);
 
             for (name, arguments) in parsed_calls {
-                let result = execute(&name, arguments)
-                    .unwrap_or_else(|error| format!("Tool error: {error}"));
+                if trace_tools {
+                    eprintln!("[patch:tools] round={round} executing tool={name}");
+                }
+                let result = match execute(&name, arguments) {
+                    Ok(output) => {
+                        if trace_tools {
+                            eprintln!(
+                                "[patch:tools] round={round} tool={name} outcome=success output_bytes={}",
+                                output.len()
+                            );
+                        }
+                        output
+                    }
+                    Err(error) => {
+                        if trace_tools {
+                            eprintln!(
+                                "[patch:tools] round={round} tool={name} outcome=error error={error:?}"
+                            );
+                        }
+                        format!("Tool error: {error}")
+                    }
+                };
                 // tool_name is part of Ollama's documented message format.
                 conversation.push(serde_json::json!({
                     "role": "tool",
@@ -302,5 +359,28 @@ mod tests {
     fn does_not_invent_missing_context_length() {
         let value = serde_json::json!({ "details": { "family": "llama" } });
         assert_eq!(find_numeric_key(&value, "context_length"), None);
+    }
+
+    #[test]
+    fn advertises_native_workspace_tools_as_ollama_function_tools() {
+        let definitions = crate::mcp::agent::native_tool_definitions();
+        let formatted = format_tools(&definitions);
+        let tools = formatted.as_array().expect("Ollama tools must be an array");
+
+        assert_eq!(tools.len(), definitions.len());
+        for tool in tools {
+            assert_eq!(tool.get("type").and_then(Value::as_str), Some("function"));
+            let function = tool.get("function").expect("function wrapper");
+            assert!(function.get("name").and_then(Value::as_str).is_some());
+            assert!(function.get("description").and_then(Value::as_str).is_some());
+            assert_eq!(
+                function.pointer("/parameters/type").and_then(Value::as_str),
+                Some("object")
+            );
+        }
+
+        assert!(tools.iter().any(|tool| {
+            tool.pointer("/function/name").and_then(Value::as_str) == Some("read_file")
+        }));
     }
 }
