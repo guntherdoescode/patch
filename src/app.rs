@@ -209,7 +209,7 @@ impl Render for PatchApp {
                 div().flex().items_center()
                     .child(
                         img(std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/patch.png")))
-                            .size(gpui::size(px(105.), px(20.)))
+                            .w(px(105.)).h(px(20.))
                     )
             )
             .child(
@@ -265,7 +265,7 @@ impl Render for PatchApp {
             div().flex_1().flex().flex_col().items_center().justify_center()
                 .child(
                     img(std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/patch.png")))
-                        .size(gpui::size(px(210.), px(40.)))
+                        .w(px(210.)).h(px(40.))
                 )
         } else {
             div().w_full().max_w(px(900.)).mx_auto().text_size(px(13.)).child(transcript)
