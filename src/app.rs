@@ -15,8 +15,14 @@ pub fn build(application: &adw::Application) {
     let root = gtk::Paned::new(gtk::Orientation::Horizontal);
     root.set_wide_handle(true);
     root.set_position(255);
-    // Let GtkPaned manage its divider from the children's minimum sizes.
-    // A notify::position handler here fights pointer dragging and can lock the handle.
+    // Keep the sidebar usable without allowing it to swallow the workspace.
+    // This only corrects positions beyond the cap, so normal dragging remains free.
+    root.connect_notify_local(Some("position"), |paned, _| {
+        const MAX_SIDEBAR_WIDTH: i32 = 360;
+        if paned.position() > MAX_SIDEBAR_WIDTH {
+            paned.set_position(MAX_SIDEBAR_WIDTH);
+        }
+    });
     let content = gtk::Paned::new(gtk::Orientation::Horizontal);
     content.set_wide_handle(true);
     content.set_position(760);
