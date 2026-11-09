@@ -66,6 +66,20 @@ impl Default for OllamaClient {
     }
 }
 
+
+/// Translate provider-neutral tool definitions into Ollama's function-tool
+/// schema. The MCP layer never needs to know this wire representation.
+pub fn format_tools(definitions: &[crate::mcp::agent::ToolDefinition]) -> Value {
+    Value::Array(definitions.iter().map(|tool| serde_json::json!({
+        "type": "function",
+        "function": {
+            "name": tool.name,
+            "description": tool.description,
+            "parameters": tool.input_schema
+        }
+    })).collect())
+}
+
 impl OllamaClient {
     pub fn new(base_url: impl Into<String>) -> Self {
         Self {
