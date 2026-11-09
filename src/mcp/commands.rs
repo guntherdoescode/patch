@@ -21,10 +21,18 @@ pub fn run_read_only(workspace: &Workspace, program: &str, args: &[String]) -> R
         if !matches!(sub, "status" | "diff" | "log" | "show" | "branch" | "rev-parse" | "ls-files") {
             return Err(CommandError::NotAllowed);
         }
+        if args.iter().any(|a| a.starts_with("--output") || a == "--ext-diff" || a == "--textconv"
+            || a == "--no-index" || a == "--config-env") {
+            return Err(CommandError::NotAllowed);
+        }
+        if sub == "branch" && args.iter().skip(1).any(|a| !["-a", "-r", "--all", "--remotes", "--list", "--show-current", "-v", "--verbose", "--no-color"].contains(&a.as_str())) {
+            return Err(CommandError::NotAllowed);
+        }
     }
     // Reject options that turn nominally read-only utilities into execution or
     // mutation primitives. No shell is ever involved.
-    if program == "find" && args.iter().any(|a| ["-exec", "-execdir", "-delete", "-ok", "-okdir", "-fprint", "-fprintf", "-fls"].contains(&a.as_str())) {
+    if program == "find" && args.iter().any(|a| ["-exec", "-execdir", "-delete", "-ok", "-okdir"].contains(&a.as_str())
+        || a.starts_with("-fprint") || a.starts_with("-fprintf") || a.starts_with("-fls")) {
         return Err(CommandError::NotAllowed);
     }
     if program == "grep" && args.iter().any(|a| a == "-f" || a == "--file" || a.starts_with("--file=")) {
