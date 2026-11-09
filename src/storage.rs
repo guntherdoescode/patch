@@ -192,3 +192,15 @@ pub fn save_message(
     )?;
     Ok(connection.last_insert_rowid())
 }
+
+/// Load the complete ordered transcript for a chat.
+pub fn list_messages(chat_id: i64) -> Result<Vec<(String, String)>> {
+    let connection = open_database()?;
+    let mut statement = connection.prepare(
+        "SELECT role, content FROM messages WHERE chat_id = ?1 ORDER BY id"
+    )?;
+    let rows = statement.query_map([chat_id], |row| {
+        Ok((row.get(0)?, row.get(1)?))
+    })?;
+    rows.collect()
+}
