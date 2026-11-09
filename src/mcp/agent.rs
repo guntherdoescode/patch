@@ -1,4 +1,4 @@
-//! Ollama-compatible tool-call parsing and model-facing native tool catalogue.
+//! Provider-neutral tool-call parsing and the built-in workspace tool catalogue.
 use serde_json::{json, Value};
 
 pub fn native_tool_definitions() -> Value {
@@ -17,13 +17,12 @@ pub fn native_tool_definitions() -> Value {
 /// tool-capable models incorrectly print the same call as a JSON object in
 /// message.content; accept that form only when it is an exact, known tool
 /// envelope, never by scraping arbitrary prose.
-pub fn tool_calls(message: &Value) -> Vec<(String, Value)> {
-    let known = ["get_current_directory", "list_directory", "read_file", "search_files", "run_read_only", "write_file", "delete_file"];
+pub fn tool_calls(message: &Value, allowed_tools: &[String]) -> Vec<(String, Value)> {
     if let Some(calls) = message.pointer("/message/tool_calls").and_then(Value::as_array) {
         let parsed = calls.iter().filter_map(|call| {
             let function = call.get("function")?;
             let name = function.get("name")?.as_str()?.to_owned();
-            if !known.contains(&name.as_str()) { return None; }
+            if !allowed_tools.iter().any(|allowed| allowed == &name) { return None; }
             let arguments = function.get("arguments").cloned().unwrap_or_else(|| json!({}));
             Some((name, arguments))
         }).collect::<Vec<_>>();
@@ -39,7 +38,7 @@ pub fn tool_calls(message: &Value) -> Vec<(String, Value)> {
     let name = value.get("name").and_then(Value::as_str);
     let arguments = value.get("arguments");
     match (name, arguments) {
-        (Some(name), Some(arguments)) if known.contains(&name) && arguments.is_object() => {
+        (Some(name), Some(arguments)) if allowed_tools.iter().any(|allowed| allowed == name) && arguments.is_object() => {
             vec![(name.to_owned(), arguments.clone())]
         }
         _ => Vec::new(),
@@ -54,18 +53,39 @@ mod tests {
     #[test]
     fn parses_json_content_tool_call() {
         let message = json!({"message":{"content":r#"{"name":"read_file","arguments":{"path":"MCP.txt"}}"#}});
-        assert_eq!(tool_calls(&message), vec![("read_file".to_owned(), json!({"path":"MCP.txt"}))]);
+        assert_eq!(tool_calls(&message, &["read_file".to_owned()]), vec![("read_file".to_owned(), json!({"path":"MCP.txt"}))]);
     }
 
     #[test]
     fn ignores_unknown_json_content_tool() {
         let message = json!({"message":{"content":r#"{"name":"run_shell","arguments":{"command":"id"}}"#}});
-        assert!(tool_calls(&message).is_empty());
+        assert!(tool_calls(&message, &["read_file".to_owned()]).is_empty());
     }
 
     #[test]
     fn parses_native_ollama_tool_call() {
         let message = json!({"message":{"tool_calls":[{"function":{"name":"read_file","arguments":{"path":"MCP.txt"}}}] }});
-        assert_eq!(tool_calls(&message), vec![("read_file".to_owned(), json!({"path":"MCP.txt"}))]);
+        assert_eq!(tool_calls(&message, &["read_file".to_owned()]), vec![("read_file".to_owned(), json!({"path":"MCP.txt"}))]);
+    }
+}
+
+
+#[cfg(test)]
+mod dynamic_tool_tests {
+    use super::*;
+
+    #[test]
+    fn accepts_any_tool_advertised_by_the_active_catalogue() {
+        let message = json!({"message":{"content":r#"{"name":"git.status","arguments":{"path":"."}}"#}});
+        assert_eq!(
+            tool_calls(&message, &["git.status".to_owned()]),
+            vec![("git.status".to_owned(), json!({"path":"."}))]
+        );
+    }
+
+    #[test]
+    fn rejects_tools_not_in_the_active_catalogue() {
+        let message = json!({"message":{"tool_calls":[{"function":{"name":"unlisted_tool","arguments":{}}}]}});
+        assert!(tool_calls(&message, &["read_file".to_owned()]).is_empty());
     }
 }
