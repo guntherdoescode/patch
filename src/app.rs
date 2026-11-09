@@ -60,7 +60,7 @@ pub fn build(application: &adw::Application) {
     );
 
     root.set_start_child(Some(&sidebar));
-    root.set_end_child(Some(&content));
+    root.set_end_child(Some(&workspace));
     root.set_resize_start_child(false);
     root.set_resize_end_child(true);
     root.set_shrink_start_child(true);
@@ -254,7 +254,7 @@ fn build_sidebar(
                         }
                         Err(error) => eprintln!("Could not load chat history: {error}"),
                     }
-                    populate_file_list(&file_list_for_response, &path);
+                    populate_file_list(&file_list_for_response, &path, &parent_for_response);
                 }
                 Err(error) => eprintln!("Could not register workspace: {error}"),
             }
@@ -470,7 +470,7 @@ fn append_chat_row(
 
 /// Rebuild a compact, expandable project tree. Directories are sorted
 /// before files; noisy generated directories are omitted.
-fn populate_file_list(list: &gtk::ListBox, root: &std::path::Path) {
+fn populate_file_list(list: &gtk::ListBox, root: &std::path::Path, parent: &adw::ApplicationWindow) {
     while let Some(child) = list.first_child() {
         list.remove(&child);
     }
@@ -524,11 +524,8 @@ fn populate_file_list(list: &gtk::ListBox, root: &std::path::Path) {
             }
         }
     }
-    let Some(parent) = list.root().and_downcast::<adw::ApplicationWindow>() else {
-        return;
-    };
     let root_box = gtk::Box::new(gtk::Orientation::Vertical, 1);
-    walk(&root_box, root, 0, &parent);
+    walk(&root_box, root, 0, parent);
     list.append(&root_box);
 }
 
@@ -681,7 +678,9 @@ fn build_workspace(
              .patch-composer.build-mode { border-color: #f07832; background: alpha(#f07832, 0.075); }\
              .patch-mode.plan-mode { color: #65a9f2; background: alpha(#3987d7, 0.16); }\
              .patch-mode.build-mode { color: #ff9858; background: alpha(#f07832, 0.18); }\
-             textview.patch-transcript { background-color: @window_bg_color; color: @window_fg_color; }",
+             textview.patch-transcript { background-color: @window_bg_color; color: @window_fg_color; }\
+             .patch-tree-branch { border-left: 1px solid alpha(@theme_fg_color, 0.18); margin-left: 9px; padding-left: 7px; }\
+             button.patch-tree-file { padding: 2px 5px; }",
         );
         gtk::style_context_add_provider_for_display(
             &display,
