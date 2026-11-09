@@ -1,4 +1,4 @@
-use gpui_kit::gpui::{self, Context, IntoElement, PathPromptOptions, Render, Window, div, prelude::*, px, rgb};
+use gpui_kit::gpui::{self, Context, IntoElement, PathPromptOptions, Render, Window, div, img, prelude::*, px, rgb};
 use gpui_kit::base::input::{Textarea, TextareaState};
 use gpui_kit::component::scroll::ScrollableElement;
 use std::{path::PathBuf, thread};
@@ -207,8 +207,10 @@ impl Render for PatchApp {
             .bg(rgb(SIDEBAR)).border_r_1().border_color(rgb(BORDER))
             .child(
                 div().flex().items_center()
-                    .child(div().text_size(px(25.)).font_weight(gpui_kit::gpui::FontWeight::BLACK)
-                        .text_color(rgb(ACCENT)).child("P A T C H"))
+                    .child(
+                        img(std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/patch.png")))
+                            .size(gpui::size(px(105.), px(20.)))
+                    )
             )
             .child(
                 div().id("new-chat").w_full().px_3().py_2().rounded_md()
@@ -261,8 +263,10 @@ impl Render for PatchApp {
 
         let transcript_view = if transcript.is_empty() {
             div().flex_1().flex().flex_col().items_center().justify_center()
-                .child(div().text_size(px(42.)).font_weight(gpui::FontWeight::BLACK)
-                    .text_color(rgb(ACCENT)).child("P A T C H"))
+                .child(
+                    img(std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/patch.png")))
+                        .size(gpui::size(px(210.), px(40.)))
+                )
         } else {
             div().w_full().max_w(px(900.)).mx_auto().text_size(px(13.)).child(transcript)
         };
