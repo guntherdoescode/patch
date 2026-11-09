@@ -1,16 +1,32 @@
 //! Provider-neutral tool-call parsing and the built-in workspace tool catalogue.
 use serde_json::{json, Value};
 
-pub fn native_tool_definitions() -> Value {
-    json!([
-      {"type":"function","function":{"name":"get_current_directory","description":"Return the active workspace root.","parameters":{"type":"object","properties":{},"required":[]}}},
-      {"type":"function","function":{"name":"list_directory","description":"List entries in a workspace-relative directory.","parameters":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}}},
-      {"type":"function","function":{"name":"read_file","description":"Read a UTF-8 text file inside the active workspace.","parameters":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}}},
-      {"type":"function","function":{"name":"search_files","description":"Search workspace text files for a literal or regular-expression query.","parameters":{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}}},
-      {"type":"function","function":{"name":"run_read_only","description":"Run a permitted read-only command without a shell. Provide an executable and argument array.","parameters":{"type":"object","properties":{"program":{"type":"string"},"args":{"type":"array","items":{"type":"string"}}},"required":["program","args"]}}},
-      {"type":"function","function":{"name":"write_file","description":"Create or replace a UTF-8 text file inside the active workspace. Build mode only.","parameters":{"type":"object","properties":{"path":{"type":"string"},"contents":{"type":"string"}},"required":["path","contents"]}}},
-      {"type":"function","function":{"name":"delete_file","description":"Delete a file inside the active workspace. Build mode only.","parameters":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}}}
-    ])
+#[derive(Debug, Clone)]
+pub struct ToolDefinition {
+    pub name: String,
+    pub description: String,
+    pub input_schema: Value,
+}
+
+impl ToolDefinition {
+    fn new(name: &str, description: &str, input_schema: Value) -> Self {
+        Self { name: name.to_owned(), description: description.to_owned(), input_schema }
+    }
+}
+
+/// Provider-neutral definitions for Patch's built-in workspace tools. External
+/// MCP servers can contribute the same shape directly from tools/list without
+/// being coupled to a particular model API.
+pub fn native_tool_definitions() -> Vec<ToolDefinition> {
+    vec![
+        ToolDefinition::new("get_current_directory", "Return the active workspace root.", json!({"type":"object","properties":{},"required":[]})),
+        ToolDefinition::new("list_directory", "List entries in a workspace-relative directory.", json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"]})),
+        ToolDefinition::new("read_file", "Read a UTF-8 text file inside the active workspace.", json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"]})),
+        ToolDefinition::new("search_files", "Search workspace text files for a literal or regular-expression query.", json!({"type":"object","properties":{"query":{"type":"string"}},"required":["query"]})),
+        ToolDefinition::new("run_read_only", "Run a permitted read-only command without a shell. Provide an executable and argument array.", json!({"type":"object","properties":{"program":{"type":"string"},"args":{"type":"array","items":{"type":"string"}}},"required":["program","args"]})),
+        ToolDefinition::new("write_file", "Create or replace a UTF-8 text file inside the active workspace. Build mode only.", json!({"type":"object","properties":{"path":{"type":"string"},"contents":{"type":"string"}},"required":["path","contents"]})),
+        ToolDefinition::new("delete_file", "Delete a file inside the active workspace. Build mode only.", json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"]})),
+    ]
 }
 
 /// Extract structured calls from Ollama's native tool_calls field. Some
