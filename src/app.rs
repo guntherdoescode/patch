@@ -30,9 +30,9 @@ pub fn build(application: &adw::Application) {
     content.connect_notify_local(Some("position"), |paned, _| {
         let width = paned.width();
         if width <= 0 { return; }
-        let lower = 480.min(width);
-        let upper = (width - lower).max(0).min(width * 35 / 100);
-        let clamped = paned.position().clamp(lower.min(upper), upper.max(lower.min(upper)));
+        let lower = (width * 65 / 100).min((width - 180).max(0));
+        let upper = (width - 180).max(lower);
+        let clamped = paned.position().clamp(lower, upper);
         if clamped != paned.position() { paned.set_position(clamped); }
     });
 
