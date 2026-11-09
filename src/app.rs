@@ -381,7 +381,7 @@ fn append_chat_row(
                     rendered.push_str("\n\n");
                     restored.push(crate::providers::ollama::ChatMessage { role, content });
                 }
-                *chat_messages_for_select.borrow_mut() = restored;
+                *chat_messages_for_select.borrow_mut() = restored.clone();
                 if let Some(buffer) = transcript_buffer_for_select.borrow().as_ref() {
                     crate::markdown::render_conversation(buffer, &restored);
                 }
