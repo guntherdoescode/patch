@@ -19,13 +19,13 @@ impl ToolDefinition {
 /// being coupled to a particular model API.
 pub fn native_tool_definitions() -> Vec<ToolDefinition> {
     vec![
-        ToolDefinition::new("get_current_directory", "Return the active workspace root.", json!({"type":"object","properties":{},"required":[]})),
-        ToolDefinition::new("list_directory", "List entries in a workspace-relative directory.", json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"]})),
-        ToolDefinition::new("read_file", "Read a UTF-8 text file inside the active workspace.", json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"]})),
-        ToolDefinition::new("search_files", "Search workspace text files for a literal or regular-expression query.", json!({"type":"object","properties":{"query":{"type":"string"}},"required":["query"]})),
-        ToolDefinition::new("run_read_only", "Run a permitted read-only command without a shell. Provide an executable and argument array.", json!({"type":"object","properties":{"program":{"type":"string"},"args":{"type":"array","items":{"type":"string"}}},"required":["program","args"]})),
-        ToolDefinition::new("write_file", "Create or replace a UTF-8 text file inside the active workspace. Build mode only.", json!({"type":"object","properties":{"path":{"type":"string"},"contents":{"type":"string"}},"required":["path","contents"]})),
-        ToolDefinition::new("delete_file", "Delete a file inside the active workspace. Build mode only.", json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"]})),
+        ToolDefinition::new("get_current_directory", "Use this to establish the active workspace root before relying on any assumed project path. Returns the actual workspace root.", json!({"type":"object","properties":{},"required":[]})),
+        ToolDefinition::new("list_directory", "Use this to inspect the actual entries in a workspace-relative directory. Required argument: path (use \".\" for the workspace root). Never invent directory contents.", json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"]})),
+        ToolDefinition::new("read_file", "Use this whenever the task depends on the contents or implementation of a specific file. Required argument: path, relative to the workspace. Read before explaining or replacing existing code; never guess file contents.", json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"]})),
+        ToolDefinition::new("search_files", "Use this to locate definitions, references, configuration keys, or tests when their file locations are unknown. Required argument: query. Report only matches actually returned.", json!({"type":"object","properties":{"query":{"type":"string"}},"required":["query"]})),
+        ToolDefinition::new("run_read_only", "Run a permitted read-only executable without a shell. Required arguments: program (executable name) and args (array of individual arguments). Do not put the whole command in program. Never claim output or success without this tool result.", json!({"type":"object","properties":{"program":{"type":"string"},"args":{"type":"array","items":{"type":"string"}}},"required":["program","args"]})),
+        ToolDefinition::new("write_file", "Build mode only. Create or replace a UTF-8 text file inside the active workspace. Required arguments: path and complete contents. Read the existing file first when replacing it; read it back afterwards to verify.", json!({"type":"object","properties":{"path":{"type":"string"},"contents":{"type":"string"}},"required":["path","contents"]})),
+        ToolDefinition::new("delete_file", "Build mode only. Delete a file inside the active workspace. Required argument: path. Confirm the target from actual workspace evidence before deleting; never claim deletion unless the call succeeds.", json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"]})),
     ]
 }
 
