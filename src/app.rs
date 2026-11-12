@@ -981,6 +981,30 @@ fn build_workspace(
                                     }
                                 }
                             };
+                            // Reject malformed model arguments instead of silently
+                            // turning missing strings into empty paths or commands.
+                            let required_nonempty: &[&str] = match name {
+                                "list_directory" | "read_file" | "write_file" | "delete_file" => &["path"],
+                                "search_files" => &["query"],
+                                "run_read_only" => &["program"],
+                                _ => &[],
+                            };
+                            for key in required_nonempty {
+                                if args.get(*key).and_then(serde_json::Value::as_str)
+                                    .is_none_or(|value| value.trim().is_empty()) {
+                                    return Err(format!("Invalid tool arguments: '{key}' must be a non-empty string."));
+                                }
+                            }
+                            if name == "write_file" && !args.get("contents").is_some_and(serde_json::Value::is_string) {
+                                return Err("Invalid tool arguments: 'contents' must be a string.".to_owned());
+                            }
+                            if name == "run_read_only" && !args.get("args").is_some_and(serde_json::Value::is_array) {
+                                return Err("Invalid tool arguments: 'args' must be an array of strings.".to_owned());
+                            }
+                            if name == "run_read_only" && args.get("args").and_then(serde_json::Value::as_array)
+                                .is_some_and(|values| values.iter().any(|value| !value.is_string())) {
+                                return Err("Invalid tool arguments: every item in 'args' must be a string.".to_owned());
+                            }
                             match name {
                                 "get_current_directory" => Ok(crate::mcp::tools::current_directory(&workspace)),
                                 "list_directory" => {
