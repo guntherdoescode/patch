@@ -1,6 +1,6 @@
 [package]
 name = "patch"
-version = "0.1.0"
+version = "0.0.1-pre"
 edition = "2024"
 description = "A native Rust coding agent with explicit execution permissions"
 license = "MIT"
