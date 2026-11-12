@@ -172,7 +172,7 @@ impl OllamaClient {
         })).collect::<Vec<_>>();
         let mut usage = ChatUsage::default();
 
-        for _ in 0..8 {
+        let mut executed_tool_call = false;\n        let mut no_tool_call_retries = 0;\n\n        for _ in 0..10 {
             let response = self.http
                 .post(format!("{}/api/chat", self.base_url))
                 .json(&serde_json::json!({
@@ -208,11 +208,29 @@ impl OllamaClient {
                 &allowed_tools,
             );
             if parsed_calls.is_empty() {
+                // Small local models sometimes answer from assumption instead of
+                // invoking a workspace tool. Do not accept that as a completed
+                // agent turn until at least one tool has actually run.
+                if !executed_tool_call && no_tool_call_retries < 2 {
+                    no_tool_call_retries += 1;
+                    conversation.push(message.clone());
+                    conversation.push(serde_json::json!({
+                        "role": "user",
+                        "content": "Your previous response did not invoke a workspace tool. For this project-related task, that is not acceptable: do not guess or answer from assumptions. Invoke the appropriate advertised tool now, using valid arguments, and base your answer on its actual result. If the tools cannot provide the needed information, explain that only after attempting the relevant tool."
+                    }));
+                    continue;
+                }
+                if !executed_tool_call {
+                    return Err(ChatError::Provider(
+                        "The model did not invoke a workspace tool after two corrective retries; no unverified answer was accepted.".into()
+                    ));
+                }
                 if let Some(content) = message.get("content").and_then(Value::as_str) {
                     if !content.is_empty() { on_chunk(content.to_owned()); }
                 }
                 return Ok(usage);
             }
+            executed_tool_call = true;
 
             // Ollama expects an assistant tool_calls message followed by one
             // tool message per call. Some models emit a JSON envelope in plain
@@ -247,7 +265,7 @@ impl OllamaClient {
                 }));
             }
         }
-        Err(ChatError::Provider("tool-call limit reached (8 rounds)".into()))
+        Err(ChatError::Provider("tool-call limit reached (10 rounds)".into()))
     }
 
     pub fn model_info(&self, model: &str) -> Result<OllamaModelInfo, OllamaError> {
