@@ -172,7 +172,10 @@ impl OllamaClient {
         })).collect::<Vec<_>>();
         let mut usage = ChatUsage::default();
 
-        let mut executed_tool_call = false;\n        let mut no_tool_call_retries = 0;\n\n        for _ in 0..10 {
+        let mut executed_tool_call = false;
+        let mut no_tool_call_retries = 0;
+
+        for _ in 0..10 {
             let response = self.http
                 .post(format!("{}/api/chat", self.base_url))
                 .json(&serde_json::json!({
