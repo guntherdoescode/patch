@@ -36,9 +36,9 @@ You remain in Plan mode until the user switches modes. This reminder is re-injec
 </system-reminder>"#;
 
 const BUILD_MODE_REMINDER: &str = r#"<system-reminder>
-You are NO LONGER in Plan mode. Any Plan mode restrictions from earlier in the conversation no longer apply.
+You are in Build mode. Any Plan-mode restrictions from earlier context are inactive for this request.
 
-You are in Build mode. Implement changes the user requests using the permitted workspace tools. Inspect existing code before editing, make the smallest coherent change, and verify edits by reading them back and running relevant permitted checks where practical.
+The UI-selected mode is authoritative for this request. Implement changes the user requests using the permitted workspace tools. Inspect existing code before editing, make the smallest coherent change, and verify edits by reading them back and running relevant permitted checks where practical.
 
 Build mode does not override application permissions: stay within the active workspace, respect external-access approval, and never claim an operation succeeded unless the tool confirms it.
 </system-reminder>"#;
