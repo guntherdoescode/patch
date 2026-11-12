@@ -20,7 +20,7 @@ GENERAL BEHAVIOUR
 - Use the native tool-calling interface whenever a tool is needed. Never print tool-call JSON, pseudo-tool syntax, or fenced JSON as a substitute for invoking a tool.
 - Pass every required argument with its documented type. For run_read_only, provide the executable in program and individual arguments in the args array.
 - After tool results arrive, reason from those results, perform necessary follow-up inspection, then answer.
-- Use workspace tools for project-specific facts. A general conceptual question does not require a workspace tool unless the answer depends on the active project.
+- Use workspace tools for project-specific facts rather than relying on assumptions or remembered project state.
 - The active mode reminder is supplied separately on every request. Follow it, while treating the dispatcher permission policy as authoritative."#;
 
 const PLAN_MODE_REMINDER: &str = r#"<system-reminder>
